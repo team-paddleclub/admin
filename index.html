@@ -134,7 +134,7 @@
       <button id="sortDemand" onclick="setSort('demand')">Demand</button>
       <button id="sortSearch" onclick="setSort('search')">Search</button>
     </div>
-    <input id="searchbox" type="search" placeholder="City or venue name&hellip;" oninput="renderQueue()">
+    <input id="searchbox" type="search" placeholder="City or venue name&hellip;" oninput="searchInput()">
     <div class="qmeta" id="qmeta">Loading queue&hellip;</div>
     <div id="qlist"></div>
     <button class="more" id="moreBtn" style="display:none" onclick="PAGE++;renderQueue(true)">Show more</button>
@@ -155,8 +155,8 @@
 <div class="scrim" id="keyScrim">
   <div class="modal">
     <h3>Admin key</h3>
-    <p>Required once per device to apply decisions. Sent only to the Apply-Decision webhook. On a shared or borrowed device, use an incognito window — it wipes the key and the login when closed.</p>
-    <input id="keyInput" type="password" placeholder="Admin key" autocomplete="off">
+    <p><b>This is the 48-character key saved in your Passwords app</b> — not the code emailed at login (that one is only for the sign-in screen and is never asked for here). Required once per device to apply decisions. On a shared or borrowed device, use an incognito window — it wipes the key and the login when closed.</p>
+    <input id="keyInput" type="password" placeholder="48-character admin key" autocomplete="off">
     <div class="verdicts"><button class="b-approve" onclick="saveKey()">Save</button></div>
   </div>
 </div>
@@ -250,6 +250,23 @@ function priority(v){ return uncertainty(v)*impact(v); }
 /* ============================================================
    QUEUE RENDER (Priority w/ 1-in-5 blind interleave / Demand / Search)
    ============================================================ */
+/* server-side search across the FULL queue (2026-07-05: search was silently
+   limited to the 2,000 loaded rows — St. Michael's class bug) */
+var SEARCHRES=null, SEARCHQ="", SDEB=null;
+function norm(s){return String(s||"").toLowerCase().replace(/[^a-z0-9]+/g," ").trim();}
+function serverSearch(q){
+  var name=encodeURIComponent("*"+norm(q)+"*");                  // matches venue_name_norm (punctuation-insensitive)
+  var city=encodeURIComponent("*"+norm(q).replace(/\s+/g,"-")+"*");
+  sfetch("admin_review_queue?select=*&or=(venue_name_norm.ilike."+name+",city_query.ilike."+city+")&limit=100")
+    .then(function(rows){SEARCHQ=q;SEARCHRES=rows;if(SORT==="search")renderQueue();})
+    .catch(function(){});
+}
+window.searchInput=function(){
+  renderQueue();                       // instant, over loaded rows
+  clearTimeout(SDEB);
+  var q=(document.getElementById("searchbox").value||"").toLowerCase().trim();
+  if(q.length>=2 && !DEMO) SDEB=setTimeout(function(){serverSearch(q);},250);
+};
 function setSort(s){
   SORT=s; PAGE=0;
   ["priority","demand","search"].forEach(function(k){
@@ -265,8 +282,11 @@ function buildList(){
   var items=QUEUE.slice();
   if(SORT==="search"){
     var q=(document.getElementById("searchbox").value||"").toLowerCase().trim();
-    if(q) items=items.filter(function(v){
-      return (v.venue_name||"").toLowerCase().indexOf(q)>=0 || (v.city_query||"").indexOf(q.replace(/\s+/g,"-"))>=0;
+    // server results cover the WHOLE queue (client only holds the first 2,000);
+    // fall back to filtering the loaded slice while the server query is in flight
+    if(q && !DEMO && SEARCHQ===q && SEARCHRES) items=SEARCHRES.slice();
+    else if(q) items=items.filter(function(v){
+      return norm(v.venue_name).indexOf(norm(q))>=0 || (v.city_query||"").indexOf(norm(q).replace(/\s+/g,"-"))>=0;
     });
     items.sort(function(a,b){return (a.city_query||"").localeCompare(b.city_query||"");});
     return items;
@@ -387,8 +407,18 @@ window.decide=function(idx,verdict){
   finishCard(idx,v,verdict,payload);
   if(DEMO){ toast("Demo mode — not sent"); return; }
   fetch(APPLY_URL,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)})
-    .then(function(r){ if(!r.ok) throw 0; })
-    .catch(function(){ toast("Send failed — will stay in queue"); });
+    .then(function(r){
+      if(r.ok){ toast("Saved: "+verdict); return; }
+      return r.json().catch(function(){return {};}).then(function(j){
+        if(r.status===403){
+          localStorage.removeItem("PC_ADMIN_KEY");   // stored key is wrong — don't keep resending it
+          toast("Wrong admin key. Tap the verdict again and enter the 48-character key from your Passwords app (not the emailed login code).");
+        } else {
+          toast("Send failed ("+(j.reason||("HTTP "+r.status))+") — item stays in queue; reload to retry.");
+        }
+      });
+    })
+    .catch(function(){ toast("Network error — item stays in queue; reload to retry."); });
 };
 function finishCard(idx,v,verdict,p){
   // confidence tier revealed only AFTER the verdict (anti-anchoring)
