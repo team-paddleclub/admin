@@ -1,0 +1,458 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex,nofollow">
+<title>PaddleClub — Admin</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+  /* ==== PaddleClub brand system (mirrors v3.1 index.html) ==== */
+  :root{
+    --color-bg:#F7F7F5; --color-surface:#FFFFFF; --color-border:#E2E2DC;
+    --color-text:#1A1A18; --color-text-muted:#6B6B63;
+    --color-accent:#1A4A7A; --color-accent-lt:#E3ECF7; --color-accent-dark:#112D4E;
+    --color-gold:#E8B84B; --color-gold-dark:#C4902A;
+    --color-warning:#B45309; --color-error:#991B1B; --color-success:#166534;
+    --font-sans:'Inter',system-ui,-apple-system,sans-serif;
+    --font-serif:'DM Serif Display',Georgia,serif;
+    --radius-md:8px; --radius-lg:12px;
+    --shadow-sm:0 1px 3px rgba(0,0,0,0.08);
+  }
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{font-family:var(--font-sans);background:var(--color-bg);color:var(--color-text);padding-bottom:70px;}
+
+  /* ==== header + tabs (mobile-first) ==== */
+  header{background:var(--color-accent-dark);color:#fff;padding:14px 16px 0;}
+  header h1{font-family:var(--font-serif);font-size:1.25rem;font-weight:400;}
+  header .sub{font-size:.72rem;opacity:.75;margin-top:2px;}
+  .tabs{display:flex;gap:4px;margin-top:12px;}
+  .tabs button{flex:1;background:transparent;border:0;color:#fff;opacity:.65;font-family:inherit;
+    font-weight:600;font-size:.85rem;padding:10px 4px;border-bottom:3px solid transparent;cursor:pointer;}
+  .tabs button.on{opacity:1;border-bottom-color:var(--color-gold);}
+
+  main{max-width:640px;margin:0 auto;padding:14px 12px;}
+  .view{display:none;} .view.on{display:block;}
+
+  /* ==== queue controls ==== */
+  .seg{display:flex;background:var(--color-surface);border:1px solid var(--color-border);border-radius:var(--radius-md);overflow:hidden;}
+  .seg button{flex:1;border:0;background:transparent;font-family:inherit;font-size:.8rem;font-weight:600;
+    color:var(--color-text-muted);padding:9px 4px;cursor:pointer;}
+  .seg button.on{background:var(--color-accent);color:#fff;}
+  #searchbox{display:none;width:100%;margin-top:8px;padding:10px 12px;font:inherit;font-size:.9rem;
+    border:1px solid var(--color-border);border-radius:var(--radius-md);}
+  .qmeta{font-size:.75rem;color:var(--color-text-muted);margin:10px 2px;}
+  .banner{background:#FEF3C7;border:1px solid #FCD34D;color:#92400E;font-size:.78rem;
+    padding:9px 12px;border-radius:var(--radius-md);margin-bottom:10px;display:none;}
+
+  /* ==== queue card ==== */
+  .qcard{background:var(--color-surface);border:1px solid var(--color-border);border-radius:var(--radius-lg);
+    box-shadow:var(--shadow-sm);padding:14px;margin-bottom:12px;}
+  .qcard.done{opacity:.45;pointer-events:none;transition:opacity .3s;}
+  .vname{font-weight:700;font-size:.98rem;line-height:1.3;}
+  .vcity{font-size:.78rem;color:var(--color-text-muted);margin-top:2px;}
+  .vmeta{font-size:.78rem;color:var(--color-text-muted);margin-top:6px;}
+  .links{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px;}
+  .links a{font-size:.74rem;font-weight:600;color:var(--color-accent);text-decoration:none;
+    background:var(--color-accent-lt);padding:5px 10px;border-radius:99px;}
+  .links a:after{content:" \2197";}
+  .axis{font-size:.68rem;text-transform:uppercase;letter-spacing:.05em;color:var(--color-text-muted);margin:12px 0 5px;}
+  .chips{display:flex;flex-wrap:wrap;gap:6px;}
+  .chip{font-family:inherit;font-size:.76rem;font-weight:600;padding:6px 11px;border-radius:99px;cursor:pointer;
+    background:var(--color-bg);border:1px solid var(--color-border);color:var(--color-text);}
+  .chip.sys{box-shadow:0 0 0 2px var(--color-gold);}   /* ring = system's pick */
+  .chip.on{background:var(--color-accent);border-color:var(--color-accent);color:#fff;}
+  .chip:disabled{opacity:.35;cursor:default;}
+  .verdicts{display:flex;gap:8px;margin-top:14px;}
+  .verdicts button{flex:1;font-family:inherit;font-weight:700;font-size:.82rem;padding:11px 4px;
+    border-radius:var(--radius-md);border:0;cursor:pointer;}
+  .b-approve{background:var(--color-gold);color:var(--color-accent-dark);}
+  .b-hold{background:var(--color-bg);border:1px solid var(--color-border)!important;color:var(--color-text-muted);}
+  .b-reject{background:#FBEAEA;color:var(--color-error);}
+  .reveal{display:none;margin-top:10px;font-size:.75rem;color:var(--color-text-muted);
+    background:var(--color-bg);border-radius:var(--radius-md);padding:8px 10px;}
+  .more{width:100%;padding:12px;font:inherit;font-weight:600;background:var(--color-surface);
+    border:1px solid var(--color-border);border-radius:var(--radius-md);cursor:pointer;margin-top:4px;}
+  .empty{color:var(--color-text-muted);text-align:center;padding:36px 10px;font-size:.9rem;}
+
+  /* ==== dashboard ==== */
+  h2{font-family:var(--font-serif);color:var(--color-accent-dark);font-size:1.1rem;margin:18px 0 10px;font-weight:400;}
+  .cards{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;}
+  .stat{background:var(--color-surface);border:1px solid var(--color-border);border-radius:var(--radius-md);
+    padding:12px 14px;min-height:78px;display:flex;flex-direction:column;justify-content:center;}
+  .stat .n{font-size:1.5rem;font-weight:700;color:var(--color-accent);}
+  .stat .l{font-size:.7rem;color:var(--color-text-muted);text-transform:uppercase;letter-spacing:.04em;margin-top:2px;}
+  table{width:100%;border-collapse:collapse;background:var(--color-surface);border:1px solid var(--color-border);
+    border-radius:var(--radius-md);overflow:hidden;font-size:.82rem;}
+  th{background:var(--color-accent);color:#fff;text-align:left;padding:8px 10px;font-size:.7rem;text-transform:uppercase;letter-spacing:.03em;}
+  td{padding:7px 10px;border-top:1px solid var(--color-border);}
+  .meter{background:var(--color-surface);border:1px solid var(--color-border);border-radius:var(--radius-md);padding:12px 14px;margin-bottom:10px;}
+  .meter .row{display:flex;justify-content:space-between;font-size:.8rem;margin-bottom:6px;}
+  .bar{height:10px;background:var(--color-bg);border-radius:5px;overflow:hidden;position:relative;}
+  .bar>i{display:block;height:100%;background:var(--color-gold);}
+  .bar>b{position:absolute;top:-3px;bottom:-3px;width:2px;background:var(--color-error);}
+  .meter .foot{font-size:.7rem;color:var(--color-text-muted);margin-top:6px;}
+
+  /* ==== modal + toast ==== */
+  .scrim{position:fixed;inset:0;background:rgba(17,45,78,.55);display:none;align-items:center;justify-content:center;padding:20px;z-index:50;}
+  .scrim.on{display:flex;}
+  .modal{background:var(--color-surface);border-radius:var(--radius-lg);padding:22px;max-width:380px;width:100%;}
+  .modal h3{font-family:var(--font-serif);font-weight:400;color:var(--color-accent-dark);font-size:1.15rem;}
+  .modal p{font-size:.83rem;color:var(--color-text-muted);margin:8px 0 16px;line-height:1.45;}
+  .modal input{width:100%;padding:11px;font:inherit;border:1px solid var(--color-border);border-radius:var(--radius-md);margin-bottom:14px;}
+  .modal .verdicts{margin-top:0;}
+  #toast{position:fixed;bottom:16px;left:50%;transform:translateX(-50%) translateY(80px);background:var(--color-accent-dark);
+    color:#fff;font-size:.82rem;padding:10px 18px;border-radius:99px;transition:transform .25s;z-index:60;}
+  #toast.show{transform:translateX(-50%) translateY(0);}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>PaddleClub Admin</h1>
+  <div class="sub">Venue review queue &middot; data governance</div>
+  <div class="tabs">
+    <button id="tabQ" class="on" onclick="tab('q')">Review Queue</button>
+    <button id="tabD" onclick="tab('d')">Dashboard</button>
+  </div>
+</header>
+
+<main>
+  <!-- ================= QUEUE ================= -->
+  <div id="viewQ" class="view on">
+    <div class="banner" id="demoBanner">DEMO DATA — schema-admin.sql not applied yet. Decisions are not sent.</div>
+    <div class="seg">
+      <button id="sortPriority" class="on" onclick="setSort('priority')">Priority</button>
+      <button id="sortDemand" onclick="setSort('demand')">Demand</button>
+      <button id="sortSearch" onclick="setSort('search')">Search</button>
+    </div>
+    <input id="searchbox" type="search" placeholder="City or venue name&hellip;" oninput="renderQueue()">
+    <div class="qmeta" id="qmeta">Loading queue&hellip;</div>
+    <div id="qlist"></div>
+    <button class="more" id="moreBtn" style="display:none" onclick="PAGE++;renderQueue(true)">Show more</button>
+  </div>
+
+  <!-- ================= DASHBOARD ================= -->
+  <div id="viewD" class="view">
+    <h2>Funnel &middot; last 7 days</h2>
+    <div class="cards" id="dFunnel"><div class="empty">Loading&hellip;</div></div>
+    <h2>Calibration</h2>
+    <div id="dCal"><div class="empty">No decisions yet.</div></div>
+    <h2>Demand &middot; top cities, 30 days</h2>
+    <div id="dDemand"><div class="empty">Loading&hellip;</div></div>
+  </div>
+</main>
+
+<!-- admin key prompt -->
+<div class="scrim" id="keyScrim">
+  <div class="modal">
+    <h3>Admin key</h3>
+    <p>Required once per device to apply decisions. Sent only to the Apply-Decision webhook. On a shared or borrowed device, use an incognito window — it wipes the key and the login when closed.</p>
+    <input id="keyInput" type="password" placeholder="Admin key" autocomplete="off">
+    <div class="verdicts"><button class="b-approve" onclick="saveKey()">Save</button></div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+/* ============================================================
+   CONFIG
+   ============================================================ */
+var SUPA="https://yqbuzgnnehcmhbisifcn.supabase.co";
+// Anon key is PUBLIC by design (read-only PII-free views; same key the live site ships).
+var KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlxYnV6Z25uZWhjbWhiaXNpZmNuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI2Njg2ODksImV4cCI6MjA5ODI0NDY4OX0.ziGL85-vYCqEcL2-QV7kIYgwFOKqHIFYuOjj1e6_7wg";
+var APPLY_URL="https://yqbuzgnnehcmhbisifcn.supabase.co/functions/v1/apply-decision";  // Edge Function (2026-07-05, replaced planned AP flow — zero flow slots)
+var BLIND_EVERY=5;      // 1-in-5 blind interleave of high-conf items (Priority mode only)
+var PAGE_SIZE=25;
+
+var OWNERSHIP=[["public","Public"],["semi-public","Semi-public"],["commercial","Commercial"],["private","Private"],["military","Military"]];
+var COST=[["free","Free"],["small-fee","Small fee"],["paid","Paid"]];
+
+/* ============================================================
+   ADMIN KEY (localStorage; login itself = Cloudflare Access w/
+   Google OAuth. Shared devices: incognito wipes both on close.)
+   ============================================================ */
+function adminKey(){ return localStorage.getItem("PC_ADMIN_KEY") || ""; }
+var pendingAction=null;
+function saveKey(){
+  var v=document.getElementById("keyInput").value.trim();
+  if(!v) return;
+  localStorage.setItem("PC_ADMIN_KEY",v);
+  document.getElementById("keyScrim").classList.remove("on");
+  toast("Key saved on this device");
+  if(pendingAction){var a=pendingAction;pendingAction=null;a();}
+}
+function ensureAuth(then){ // gate any decision on having the key
+  if(!adminKey()){ pendingAction=then; document.getElementById("keyScrim").classList.add("on"); return false; }
+  return true;
+}
+
+/* ============================================================
+   DATA
+   ============================================================ */
+var QUEUE=[], DEMAND={}, DEMO=false, SORT="priority", PAGE=0, VIEWLIST=[];
+
+function sfetch(path){
+  return fetch(SUPA+"/rest/v1/"+path,{headers:{apikey:KEY,Authorization:"Bearer "+KEY}})
+    .then(function(r){ if(!r.ok) throw new Error("HTTP "+r.status); return r.json(); });
+}
+
+// Demo stand-ins so the console renders before schema-admin.sql is applied.
+var DEMO_DATA=[
+ {venue_id:1,city_query:"carlsbad-ca",state_query:"california",venue_name:"Poinsettia Community Park",court_count:6,access:"free",ownership:"public",cost:"free",ownership_basis:"domain",ownership_conf:"high",source_url:"https://www.pickleheads.com/courts/us/ca/carlsbad/poinsettia-community-park",website:"https://www.carlsbadca.gov/",reservation_url:null,facility_type:"Park",population:114746,courts_public:6},
+ {venue_id:2,city_query:"indianapolis-in",state_query:"indiana",venue_name:"Broad Ripple Park",court_count:4,access:"free",ownership:"public",cost:"free",ownership_basis:"derived",ownership_conf:null,source_url:"https://www.pickleheads.com/",website:null,reservation_url:null,facility_type:null,population:882039,courts_public:188},
+ {venue_id:3,city_query:"indianapolis-in",state_query:"indiana",venue_name:"The Picklr Fishers",court_count:12,access:"fee",ownership:"commercial",cost:"paid",ownership_basis:"domain",ownership_conf:"medium",source_url:"https://www.pickleheads.com/",website:"https://thepicklr.com/",reservation_url:"https://courtreserve.com/",facility_type:"Club",population:882039,courts_public:188},
+ {venue_id:4,city_query:"aberdeen-sd",state_query:"south-dakota",venue_name:"Aberdeen YMCA",court_count:3,access:"members",ownership:"semi-public",cost:"paid",ownership_basis:"domain",ownership_conf:"high",source_url:"https://www.pickleheads.com/",website:"https://www.aberdeenymca.org/",reservation_url:null,facility_type:"Gym",population:28324,courts_public:6},
+ {venue_id:5,city_query:"cleveland-oh",state_query:"ohio",venue_name:"Sunrise Estates HOA Courts",court_count:2,access:"members",ownership:"private",cost:null,ownership_basis:"derived",ownership_conf:null,source_url:"https://www.pickleheads.com/",website:null,reservation_url:null,facility_type:null,population:372624,courts_public:6},
+ {venue_id:6,city_query:"oklahoma-city-ok",state_query:"oklahoma",venue_name:"Will Rogers Senior Center",court_count:4,access:"fee",ownership:"public",cost:"small-fee",ownership_basis:"derived",ownership_conf:null,source_url:"https://www.pickleheads.com/",website:null,reservation_url:null,facility_type:null,population:681054,courts_public:133}
+];
+
+function loadQueue(){
+  Promise.all([
+    sfetch("admin_review_queue?select=*&limit=2000"),
+    sfetch("admin_city_demand?select=*").catch(function(){return [];})
+  ]).then(function(res){
+    QUEUE=res[0];
+    res[1].forEach(function(d){DEMAND[d.city_slug]=d;});
+    renderQueue();
+  }).catch(function(){
+    DEMO=true; QUEUE=DEMO_DATA.slice();
+    document.getElementById("demoBanner").style.display="block";
+    renderQueue();
+  });
+}
+
+/* ============================================================
+   PRIORITY = uncertainty × impact  (client-side; tune freely)
+   ============================================================ */
+function uncertainty(v){
+  if(v.ownership_conf==="high")   return 0.15;
+  if(v.ownership_conf==="medium") return 0.5;
+  return 0.85;                                   // name-regex only
+}
+function impact(v){
+  var courts=v.court_count||2;
+  var pop=Math.max(v.population||1000,1000);
+  var demand=(DEMAND[v.city_query]||{}).events_30d||0;
+  return courts*(1+Math.log10(pop)/4)*(1+Math.min(demand,50)/25);
+}
+function priority(v){ return uncertainty(v)*impact(v); }
+
+/* ============================================================
+   QUEUE RENDER (Priority w/ 1-in-5 blind interleave / Demand / Search)
+   ============================================================ */
+function setSort(s){
+  SORT=s; PAGE=0;
+  ["priority","demand","search"].forEach(function(k){
+    document.getElementById("sort"+k.charAt(0).toUpperCase()+k.slice(1)).classList.toggle("on",k===s);
+  });
+  var sb=document.getElementById("searchbox");
+  sb.style.display=(s==="search")?"block":"none";
+  if(s==="search") sb.focus();
+  renderQueue();
+}
+
+function buildList(){
+  var items=QUEUE.slice();
+  if(SORT==="search"){
+    var q=(document.getElementById("searchbox").value||"").toLowerCase().trim();
+    if(q) items=items.filter(function(v){
+      return (v.venue_name||"").toLowerCase().indexOf(q)>=0 || (v.city_query||"").indexOf(q.replace(/\s+/g,"-"))>=0;
+    });
+    items.sort(function(a,b){return (a.city_query||"").localeCompare(b.city_query||"");});
+    return items;
+  }
+  if(SORT==="demand"){
+    items.sort(function(a,b){
+      return (((DEMAND[b.city_query]||{}).events_30d||0)-((DEMAND[a.city_query]||{}).events_30d||0)) || priority(b)-priority(a);
+    });
+    return items;
+  }
+  // Priority: sort the uncertain pool, then interleave 1-in-5 random HIGH-conf
+  // items (tagged _blind) — Troy can't tell them apart, that's the point.
+  var pool=items.filter(function(v){return v.ownership_conf==="high";});
+  var main=items.filter(function(v){return v.ownership_conf!=="high";})
+                .sort(function(a,b){return priority(b)-priority(a);});
+  var out=[],pi=0;
+  for(var i=0;i<main.length;i++){
+    out.push(main[i]);
+    if((i+1)%(BLIND_EVERY-1)===0 && pool.length){
+      var pick=pool.splice(Math.floor(Math.random()*pool.length),1)[0];
+      pick._blind=true; out.push(pick);
+    }
+  }
+  return out.concat(pool); // leftover high-conf at the end
+}
+
+function esc(s){return String(s==null?"":s).replace(/[&<>"]/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c];});}
+function pretty(slug){return String(slug||"").replace(/-[a-z]{2}$/,"").replace(/-/g," ").replace(/\b\w/g,function(c){return c.toUpperCase();});}
+function stateAbbr(slug){var m=String(slug||"").match(/-([a-z]{2})$/);return m?m[1].toUpperCase():"";}
+
+function card(v,idx){
+  var links="";
+  if(v.source_url)      links+='<a href="'+esc(v.source_url)+'" target="_blank" rel="noopener">Pickleheads</a>';
+  if(v.website)         links+='<a href="'+esc(v.website)+'" target="_blank" rel="noopener">Website</a>';
+  if(v.reservation_url) links+='<a href="'+esc(v.reservation_url)+'" target="_blank" rel="noopener">Booking</a>';
+  var own=OWNERSHIP.map(function(o){
+    return '<button class="chip'+(v.ownership===o[0]?" sys on":"")+'" data-ax="own" data-val="'+o[0]+'" onclick="pick(this,'+idx+')">'+o[1]+'</button>';
+  }).join("");
+  var cost=COST.map(function(o){
+    return '<button class="chip'+(v.cost===o[0]?" sys on":"")+'" data-ax="cost" data-val="'+o[0]+'" onclick="pick(this,'+idx+')"'+(v.ownership==="private"?" disabled":"")+'>'+o[1]+'</button>';
+  }).join("");
+  var demand=(DEMAND[v.city_query]||{}).events_30d;
+  return '<div class="qcard" id="qc'+idx+'">'+
+    '<div class="vname">'+esc(v.venue_name||"(unnamed venue)")+'</div>'+
+    '<div class="vcity">'+pretty(v.city_query)+', '+stateAbbr(v.city_query)+(demand?' &middot; '+demand+' funnel events/30d':'')+'</div>'+
+    '<div class="vmeta">'+(v.court_count||"?")+' courts &middot; access tag: '+esc(v.access||"none")+(v.facility_type?' &middot; '+esc(v.facility_type):'')+'</div>'+
+    '<div class="links">'+(links||'<span style="font-size:.74rem;color:var(--color-text-muted)">No evidence links — name only</span>')+'</div>'+
+    '<div class="axis">Ownership</div><div class="chips" id="own'+idx+'">'+own+'</div>'+
+    '<div class="axis">Cost</div><div class="chips" id="cost'+idx+'">'+cost+'</div>'+
+    '<div class="verdicts">'+
+      '<button class="b-approve" onclick="decide('+idx+',\'approve\')">Approve</button>'+
+      '<button class="b-hold" onclick="decide('+idx+',\'hold\')">Hold</button>'+
+      '<button class="b-reject" onclick="decide('+idx+',\'reject\')">Reject</button>'+
+    '</div>'+
+    '<div class="reveal" id="rev'+idx+'"></div>'+
+  '</div>';
+}
+
+function renderQueue(append){
+  VIEWLIST=append?VIEWLIST:buildList();
+  var slice=VIEWLIST.slice(0,(PAGE+1)*PAGE_SIZE);
+  document.getElementById("qlist").innerHTML=slice.length
+    ? slice.map(function(v,i){return card(v,i);}).join("")
+    : '<div class="empty">Queue is clear. Nothing awaiting review.</div>';
+  document.getElementById("moreBtn").style.display=VIEWLIST.length>slice.length?"block":"none";
+  document.getElementById("qmeta").textContent=VIEWLIST.length+" awaiting review"+(SORT==="priority"?" · sorted by uncertainty × impact":"");
+}
+
+/* chip selection; private ownership clears + disables cost axis */
+window.pick=function(btn,idx){
+  var ax=btn.dataset.ax, host=document.getElementById((ax==="own"?"own":"cost")+idx);
+  host.querySelectorAll(".chip").forEach(function(c){c.classList.remove("on");});
+  btn.classList.add("on");
+  if(ax==="own"){
+    var isPriv=btn.dataset.val==="private";
+    document.getElementById("cost"+idx).querySelectorAll(".chip").forEach(function(c){
+      c.disabled=isPriv; if(isPriv)c.classList.remove("on");
+    });
+  }
+};
+
+/* ============================================================
+   DECISIONS → Apply-Decision AP webhook
+   ============================================================ */
+function selected(idx,ax){
+  var el=document.getElementById(ax+idx).querySelector(".chip.on");
+  return el?el.dataset.val:null;
+}
+window.decide=function(idx,verdict){
+  var v=VIEWLIST[idx]; if(!v) return;
+  if(!ensureAuth(function(){decide(idx,verdict);})) return;
+  var payload={
+    key:adminKey(), venue_id:v.venue_id, verdict:verdict,
+    system_ownership:v.ownership||null, system_cost:v.cost||null,
+    chosen_ownership:verdict==="approve"?selected(idx,"own"):null,
+    chosen_cost:verdict==="approve"?selected(idx,"cost"):null,
+    was_blind:!!v._blind, conf:v.ownership_conf||null, basis:v.ownership_basis||null,
+    ts:new Date().toISOString()
+  };
+  finishCard(idx,v,verdict,payload);
+  if(DEMO){ toast("Demo mode — not sent"); return; }
+  fetch(APPLY_URL,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)})
+    .then(function(r){ if(!r.ok) throw 0; })
+    .catch(function(){ toast("Send failed — will stay in queue"); });
+};
+function finishCard(idx,v,verdict,p){
+  // confidence tier revealed only AFTER the verdict (anti-anchoring)
+  var corrected=verdict==="approve"&&(p.chosen_ownership!==p.system_ownership||p.chosen_cost!==p.system_cost);
+  document.getElementById("rev"+idx).innerHTML=
+    "System confidence: <b>"+(v.ownership_conf||"name-regex only")+"</b> ("+(v.ownership_basis||"derived")+")"+
+    (corrected?" &middot; <b>corrected</b>":"")+" &middot; "+verdict;
+  document.getElementById("rev"+idx).style.display="block";
+  var el=document.getElementById("qc"+idx);
+  setTimeout(function(){el.classList.add("done");},1200);
+  QUEUE=QUEUE.filter(function(q){return q.venue_id!==v.venue_id||verdict==="hold";});
+}
+
+/* ============================================================
+   DASHBOARD
+   ============================================================ */
+function wilsonLB(correct,n){
+  if(!n) return null;
+  var z=1.96,p=correct/n;
+  return (p+z*z/(2*n)-z*Math.sqrt((p*(1-p)+z*z/(4*n))/n))/(1+z*z/n);
+}
+function loadDash(){
+  sfetch("funnel_metrics_daily?select=*&order=day.desc&limit=7").then(function(rows){
+    function s(k){return rows.reduce(function(a,r){return a+(r[k]||0);},0);}
+    var m=[["started","Started"],["reached_diagnosis","Diagnosis"],["contributed","Contributed"],["identified","Identified"]];
+    document.getElementById("dFunnel").innerHTML=m.map(function(k){
+      return '<div class="stat"><div class="n">'+s(k[0])+'</div><div class="l">'+k[1]+' · 7d</div></div>';
+    }).join("");
+  }).catch(function(){document.getElementById("dFunnel").innerHTML='<div class="empty">Funnel view unavailable.</div>';});
+
+  sfetch("admin_city_demand?select=*&order=events_30d.desc&limit=15").then(function(rows){
+    document.getElementById("dDemand").innerHTML=rows.length?
+      '<table><thead><tr><th>City</th><th>Events</th><th>Visitors</th></tr></thead><tbody>'+
+      rows.map(function(r){return '<tr><td>'+pretty(r.city_slug)+', '+stateAbbr(r.city_slug)+'</td><td>'+r.events_30d+'</td><td>'+r.visitors_30d+'</td></tr>';}).join("")+
+      '</tbody></table>':'<div class="empty">No funnel activity in 30 days.</div>';
+  }).catch(function(){document.getElementById("dDemand").innerHTML='<div class="empty">Demand view unavailable (apply schema-admin.sql).</div>';});
+
+  sfetch("admin_calibration?select=*").then(function(rows){
+    if(!rows.length){return;}
+    // graduation math runs on BLIND audits only (unbiased sample)
+    var strata={};
+    rows.forEach(function(r){
+      if(!r.was_blind) return;
+      var s=strata[r.stratum]=strata[r.stratum]||{n:0,ok:0};
+      s.n+=r.decisions; s.ok+=r.system_correct;
+    });
+    var html=Object.keys(strata).map(function(k){
+      var s=strata[k],lb=wilsonLB(s.ok,s.n),pct=s.n?Math.round(100*s.ok/s.n):0;
+      return '<div class="meter"><div class="row"><b>'+esc(k)+' confidence</b><span>'+s.ok+'/'+s.n+' blind audits correct</span></div>'+
+        '<div class="bar"><i style="width:'+(lb?Math.round(lb*100):0)+'%"></i><b style="left:93%"></b></div>'+
+        '<div class="foot">CI lower bound: <b>'+(lb?(100*lb).toFixed(1)+"%":"—")+'</b> · graduation: ≥93% display fields / ≥98% count-bearing (red line = 93%)</div></div>';
+    }).join("");
+    document.getElementById("dCal").innerHTML=html||'<div class="empty">No blind audits yet — decide items in Priority mode to accumulate them.</div>';
+  }).catch(function(){});
+}
+
+/* ============================================================
+   SHELL
+   ============================================================ */
+/* Tab switch = a history entry, so iOS back-swipe returns Dashboard -> Queue
+   instead of leaving the site (same pattern as the funnel overlay). */
+var CUR_TAB="q";
+function render(t){
+  CUR_TAB=t;
+  document.getElementById("viewQ").classList.toggle("on",t==="q");
+  document.getElementById("viewD").classList.toggle("on",t==="d");
+  document.getElementById("tabQ").classList.toggle("on",t==="q");
+  document.getElementById("tabD").classList.toggle("on",t==="d");
+  if(t==="d") loadDash();
+}
+function tab(t){                       // user tapped a tab
+  if(t===CUR_TAB) return;
+  if(t==="d") history.pushState({tab:"d"},"","#dashboard");
+  else        history.back();          // popstate renders the queue
+  if(t==="d") render(t);
+}
+window.addEventListener("popstate",function(e){
+  render(e.state&&e.state.tab==="d"?"d":"q");
+});
+if(location.hash==="#dashboard"){      // deep link / refresh on dashboard
+  history.replaceState(null,"",location.pathname);
+  history.pushState({tab:"d"},"","#dashboard");
+  render("d");
+}
+function toast(msg){
+  var t=document.getElementById("toast");t.textContent=msg;t.classList.add("show");
+  setTimeout(function(){t.classList.remove("show");},2200);
+}
+loadQueue();
+</script>
+</body>
+</html>
