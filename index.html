@@ -109,7 +109,8 @@
   .modal p{font-size:.83rem;color:var(--color-text-muted);margin:8px 0 16px;line-height:1.45;}
   .modal input{width:100%;padding:11px;font:inherit;border:1px solid var(--color-border);border-radius:var(--radius-md);margin-bottom:14px;}
   .modal .verdicts{margin-top:0;}
-  #toast{position:fixed;bottom:16px;left:50%;transform:translateX(-50%) translateY(80px);background:var(--color-accent-dark);
+  /* safe-area bottom offset: on iOS the toast was sliding half under the home bar */
+  #toast{position:fixed;bottom:calc(20px + env(safe-area-inset-bottom,0px));left:50%;max-width:92vw;z-index:9999;transform:translateX(-50%) translateY(120px);background:var(--color-accent-dark);
     color:#fff;font-size:.82rem;padding:10px 18px;border-radius:99px;transition:transform .25s;z-index:60;}
   #toast.show{transform:translateX(-50%) translateY(0);}
 </style>
@@ -151,16 +152,6 @@
   </div>
 </main>
 
-<!-- admin key prompt -->
-<div class="scrim" id="keyScrim">
-  <div class="modal">
-    <h3>Admin key</h3>
-    <p><b>This is the 48-character key saved in your Passwords app</b> — not the code emailed at login (that one is only for the sign-in screen and is never asked for here). Required once per device to apply decisions. On a shared or borrowed device, use an incognito window — it wipes the key and the login when closed.</p>
-    <input id="keyInput" type="password" placeholder="48-character admin key" autocomplete="off">
-    <div class="verdicts"><button class="b-approve" onclick="saveKey()">Save</button></div>
-  </div>
-</div>
-
 <div id="toast"></div>
 
 <script>
@@ -170,7 +161,7 @@
 var SUPA="https://yqbuzgnnehcmhbisifcn.supabase.co";
 // Anon key is PUBLIC by design (read-only PII-free views; same key the live site ships).
 var KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlxYnV6Z25uZWhjbWhiaXNpZmNuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI2Njg2ODksImV4cCI6MjA5ODI0NDY4OX0.ziGL85-vYCqEcL2-QV7kIYgwFOKqHIFYuOjj1e6_7wg";
-var APPLY_URL="https://yqbuzgnnehcmhbisifcn.supabase.co/functions/v1/apply-decision";  // Edge Function (2026-07-05, replaced planned AP flow — zero flow slots)
+var APPLY_URL="/api/apply";  // same-origin Pages Function proxy (2026-07-05): injects the admin key server-side behind Cloudflare Access — no key typing
 var BLIND_EVERY=5;      // 1-in-5 blind interleave of high-conf items (Priority mode only)
 var PAGE_SIZE=25;
 
@@ -178,23 +169,11 @@ var OWNERSHIP=[["public","Public"],["semi-public","Semi-public"],["commercial","
 var COST=[["free","Free"],["small-fee","Small fee"],["paid","Paid"]];
 
 /* ============================================================
-   ADMIN KEY (localStorage; login itself = Cloudflare Access w/
-   Google OAuth. Shared devices: incognito wipes both on close.)
+   AUTH (2026-07-05): the admin key moved server-side into the
+   /api/apply Pages Function (env secret) — the Access login IS
+   the auth. No key prompt, nothing stored on the device.
    ============================================================ */
-function adminKey(){ return localStorage.getItem("PC_ADMIN_KEY") || ""; }
-var pendingAction=null;
-function saveKey(){
-  var v=document.getElementById("keyInput").value.trim();
-  if(!v) return;
-  localStorage.setItem("PC_ADMIN_KEY",v);
-  document.getElementById("keyScrim").classList.remove("on");
-  toast("Key saved on this device");
-  if(pendingAction){var a=pendingAction;pendingAction=null;a();}
-}
-function ensureAuth(then){ // gate any decision on having the key
-  if(!adminKey()){ pendingAction=then; document.getElementById("keyScrim").classList.add("on"); return false; }
-  return true;
-}
+localStorage.removeItem("PC_ADMIN_KEY"); // clean up any key stored by earlier versions
 
 /* ============================================================
    DATA
@@ -391,9 +370,8 @@ function selected(idx,ax){
 }
 window.decide=function(idx,verdict){
   var v=VIEWLIST[idx]; if(!v) return;
-  if(!ensureAuth(function(){decide(idx,verdict);})) return;
   var payload={
-    key:adminKey(), venue_id:v.venue_id, verdict:verdict,
+    venue_id:v.venue_id, verdict:verdict,
     system_ownership:v.ownership||null, system_cost:v.cost||null,
     chosen_ownership:verdict==="approve"?selected(idx,"own"):null,
     chosen_cost:verdict==="approve"?selected(idx,"cost"):null,
@@ -410,16 +388,20 @@ window.decide=function(idx,verdict){
     .then(function(r){
       if(r.ok){ toast("Saved: "+verdict); return; }
       return r.json().catch(function(){return {};}).then(function(j){
-        if(r.status===403){
-          localStorage.removeItem("PC_ADMIN_KEY");   // stored key is wrong — don't keep resending it
-          toast("Wrong admin key. Tap the verdict again and enter the 48-character key from your Passwords app (not the emailed login code).");
-        } else {
-          toast("Send failed ("+(j.reason||("HTTP "+r.status))+") — item stays in queue; reload to retry.");
-        }
+        revertCard(idx,v);   // put the card back so the verdict can be re-tapped
+        toast(r.status===403
+          ? "Session issue — reload the page to sign in again, then retry."
+          : "Send failed ("+(j.reason||("HTTP "+r.status))+") — card restored, tap again to retry.");
       });
     })
-    .catch(function(){ toast("Network error — item stays in queue; reload to retry."); });
+    .catch(function(){ revertCard(idx,v); toast("Network error — card restored, tap again to retry."); });
 };
+function revertCard(idx,v){
+  var el=document.getElementById("qc"+idx);
+  if(el){ el.classList.remove("done","resolved-on"); el.style.opacity=1; }
+  var rev=document.getElementById("rev"+idx); if(rev) rev.style.display="none";
+  if(!QUEUE.some(function(q){return q.venue_id===v.venue_id;})) QUEUE.push(v);
+}
 function finishCard(idx,v,verdict,p){
   // confidence tier revealed only AFTER the verdict (anti-anchoring)
   var corrected=verdict==="approve"&&(p.chosen_ownership!==p.system_ownership||p.chosen_cost!==p.system_cost);
@@ -504,9 +486,11 @@ if(location.hash==="#dashboard"){      // deep link / refresh on dashboard
   history.pushState({tab:"d"},"","#dashboard");
   render("d");
 }
+var TOAST_T=null;
 function toast(msg){
   var t=document.getElementById("toast");t.textContent=msg;t.classList.add("show");
-  setTimeout(function(){t.classList.remove("show");},2200);
+  clearTimeout(TOAST_T);
+  TOAST_T=setTimeout(function(){t.classList.remove("show");},Math.max(2600,msg.length*55)); // long messages stay readable
 }
 loadQueue();
 </script>
