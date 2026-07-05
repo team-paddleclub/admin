@@ -40,7 +40,9 @@
   .seg button{flex:1;border:0;background:transparent;font-family:inherit;font-size:.8rem;font-weight:600;
     color:var(--color-text-muted);padding:9px 4px;cursor:pointer;}
   .seg button.on{background:var(--color-accent);color:#fff;}
-  #searchbox{display:none;width:100%;margin-top:8px;padding:10px 12px;font:inherit;font-size:.9rem;
+  /* 16px floor on inputs: below that, iOS Safari auto-zooms on focus (Troy #3 2026-07-05) */
+  input{font-size:16px;}
+  #searchbox{display:none;width:100%;margin-top:8px;padding:10px 12px;font:inherit;font-size:16px;
     border:1px solid var(--color-border);border-radius:var(--radius-md);}
   .qmeta{font-size:.75rem;color:var(--color-text-muted);margin:10px 2px;}
   .banner{background:#FEF3C7;border:1px solid #FCD34D;color:#92400E;font-size:.78rem;
@@ -58,6 +60,11 @@
     background:var(--color-accent-lt);padding:5px 10px;border-radius:99px;}
   .links a:after{content:" \2197";}
   .axis{font-size:.68rem;text-transform:uppercase;letter-spacing:.05em;color:var(--color-text-muted);margin:12px 0 5px;}
+  .count{display:flex;align-items:center;gap:12px;}
+  .count button{width:34px;height:34px;border:1.5px solid var(--color-border);background:var(--color-bg);
+    border-radius:8px;font-family:inherit;font-size:1.05rem;font-weight:700;cursor:pointer;line-height:1;}
+  .count span{min-width:2ch;text-align:center;font-weight:700;font-size:.95rem;}
+  .count .cnote{font-size:.68rem;color:var(--color-text-muted);font-weight:400;}
   .chips{display:flex;flex-wrap:wrap;gap:6px;}
   .chip{font-family:inherit;font-size:.76rem;font-weight:600;padding:6px 11px;border-radius:99px;cursor:pointer;
     background:var(--color-bg);border:1px solid var(--color-border);color:var(--color-text);}
@@ -309,6 +316,12 @@ function card(v,idx){
     '<div class="links">'+(links||'<span style="font-size:.74rem;color:var(--color-text-muted)">No evidence links — name only</span>')+'</div>'+
     '<div class="axis">Ownership</div><div class="chips" id="own'+idx+'">'+own+'</div>'+
     '<div class="axis">Cost</div><div class="chips" id="cost'+idx+'">'+cost+'</div>'+
+    '<div class="axis">Court count</div><div class="count">'+
+      '<button type="button" onclick="cstep('+idx+',-1)">&ndash;</button>'+
+      '<span id="cc'+idx+'" data-sys="'+(+v.court_count||0)+'">'+(+v.court_count||0)+'</span>'+
+      '<button type="button" onclick="cstep('+idx+',1)">+</button>'+
+      '<span class="cnote" id="ccn'+idx+'"></span>'+
+    '</div>'+
     '<div class="verdicts">'+
       '<button class="b-approve" onclick="decide('+idx+',\'approve\')">Approve</button>'+
       '<button class="b-hold" onclick="decide('+idx+',\'hold\')">Hold</button>'+
@@ -328,6 +341,14 @@ function renderQueue(append){
   document.getElementById("qmeta").textContent=VIEWLIST.length+" awaiting review"+(SORT==="priority"?" · sorted by uncertainty × impact":"");
 }
 
+/* court count stepper; note appears only when Troy changes the system value */
+window.cstep=function(idx,d){
+  var s=document.getElementById("cc"+idx);
+  var n=Math.max(0,Math.min(200,parseInt(s.textContent||"0",10)+d));
+  s.textContent=n;
+  var sys=parseInt(s.dataset.sys,10);
+  document.getElementById("ccn"+idx).textContent=n===sys?"":"was "+sys;
+};
 /* chip selection; private ownership clears + disables cost axis */
 window.pick=function(btn,idx){
   var ax=btn.dataset.ax, host=document.getElementById((ax==="own"?"own":"cost")+idx);
@@ -356,6 +377,10 @@ window.decide=function(idx,verdict){
     system_ownership:v.ownership||null, system_cost:v.cost||null,
     chosen_ownership:verdict==="approve"?selected(idx,"own"):null,
     chosen_cost:verdict==="approve"?selected(idx,"cost"):null,
+    chosen_courts:(function(){if(verdict!=="approve")return null;
+      var s=document.getElementById("cc"+idx);if(!s)return null;
+      var n=parseInt(s.textContent,10);
+      return n===parseInt(s.dataset.sys,10)?null:n;})(),  // null = keep system count
     was_blind:!!v._blind, conf:v.ownership_conf||null, basis:v.ownership_basis||null,
     ts:new Date().toISOString()
   };
@@ -432,6 +457,7 @@ function render(t){
   document.getElementById("viewD").classList.toggle("on",t==="d");
   document.getElementById("tabQ").classList.toggle("on",t==="q");
   document.getElementById("tabD").classList.toggle("on",t==="d");
+  window.scrollTo(0,0);  // each tab opens at its top — no inherited scroll jump (Troy #5 2026-07-05)
   if(t==="d") loadDash();
 }
 function tab(t){                       // user tapped a tab
