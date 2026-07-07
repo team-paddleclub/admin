@@ -398,7 +398,10 @@ window.decide=function(idx,verdict){
 };
 function revertCard(idx,v){
   var el=document.getElementById("qc"+idx);
-  if(el){ el.classList.remove("done","resolved-on"); el.style.opacity=1; }
+  if(el){
+    if(el._doneTimer){ clearTimeout(el._doneTimer); el._doneTimer=null; }
+    el.classList.remove("done","resolved-on"); el.style.opacity=1;
+  }
   var rev=document.getElementById("rev"+idx); if(rev) rev.style.display="none";
   if(!QUEUE.some(function(q){return q.venue_id===v.venue_id;})) QUEUE.push(v);
 }
@@ -410,7 +413,9 @@ function finishCard(idx,v,verdict,p){
     (corrected?" &middot; <b>corrected</b>":"")+" &middot; "+verdict;
   document.getElementById("rev"+idx).style.display="block";
   var el=document.getElementById("qc"+idx);
-  setTimeout(function(){el.classList.add("done");},1200);
+  // store the timer so a send-failure revert can cancel it (405 race: revert
+  // ran before this fired, then the timer re-locked the card until reload)
+  el._doneTimer=setTimeout(function(){el.classList.add("done");el._doneTimer=null;},1200);
   QUEUE=QUEUE.filter(function(q){return q.venue_id!==v.venue_id||verdict==="hold";});
 }
 
