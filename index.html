@@ -147,6 +147,8 @@
     <div class="cards" id="dTotals"><div class="empty">Loading&hellip;</div></div>
     <h2>Funnel &middot; last 7 days</h2>
     <div class="cards" id="dFunnel"><div class="empty">Loading&hellip;</div></div>
+    <h2>A/B &middot; Early Email</h2>
+    <div id="dAB"><div class="empty">Loading&hellip;</div></div>
     <h2>Calibration</h2>
     <div id="dCal"><div class="empty">No decisions yet.</div></div>
     <h2>Demand &middot; top cities, 30 days</h2>
@@ -458,6 +460,16 @@ function loadDash(){
       rows.map(function(r){return '<tr><td>'+pretty(r.city_slug)+', '+stateAbbr(r.city_slug)+'</td><td>'+r.events_30d+'</td><td>'+r.visitors_30d+'</td></tr>';}).join("")+
       '</tbody></table>':'<div class="empty">No funnel activity in 30 days.</div>';
   }).catch(function(){document.getElementById("dDemand").innerHTML='<div class="empty">Demand view unavailable (apply schema-admin.sql).</div>';});
+
+  // A/B tester: distinct visitors per arm; email conversion is the test's primary metric
+  sfetch("admin_ab_variants?select=*&order=variant.asc").then(function(rows){
+    if(!rows.length){document.getElementById("dAB").innerHTML='<div class="empty">No variant-tagged events yet.</div>';return;}
+    function pct(a,b){return b?(100*a/b).toFixed(1)+"%":"—";}
+    document.getElementById("dAB").innerHTML=
+      '<table><thead><tr><th>Variant</th><th>Visitors</th><th>Saw ask</th><th>Emails</th><th>Conv</th><th>Sources</th></tr></thead><tbody>'+
+      rows.map(function(r){return '<tr><td>'+esc(r.variant)+'</td><td>'+r.visitors+'</td><td>'+r.saw_email_ask+'</td><td>'+r.emails+'</td><td><b>'+pct(r.emails,r.visitors)+'</b></td><td>'+r.added_sources+'</td></tr>';}).join("")+
+      '</tbody></table>';
+  }).catch(function(){document.getElementById("dAB").innerHTML='<div class="empty">A/B view unavailable (re-run schema-admin.sql).</div>';});
 
   sfetch("admin_calibration?select=*").then(function(rows){
     if(!rows.length){return;}
