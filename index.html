@@ -100,6 +100,19 @@
   .bar>i{display:block;height:100%;background:var(--color-gold);}
   .bar>b{position:absolute;top:-3px;bottom:-3px;width:2px;background:var(--color-error);}
   .meter .foot{font-size:.7rem;color:var(--color-text-muted);margin-top:6px;}
+  /* ==== experiments (A/B head-to-head, 2026-07-08) ==== */
+  .exp{background:var(--color-surface);border:1px solid var(--color-border);border-radius:var(--radius-md);padding:14px;margin-bottom:10px;}
+  .exp .name{font-size:.9rem;font-weight:700;color:var(--color-accent-dark);}
+  .exp .metric{font-size:.7rem;color:var(--color-text-muted);text-transform:uppercase;letter-spacing:.04em;margin:2px 0 10px;}
+  .exp .arm{margin-bottom:8px;}
+  .exp .arm .top{display:flex;justify-content:space-between;font-size:.8rem;margin-bottom:3px;}
+  .exp .arm .top b{font-weight:700;}
+  .exp .arm .sub{color:var(--color-text-muted);font-size:.72rem;}
+  .exp .abar{height:14px;background:var(--color-bg);border-radius:7px;overflow:hidden;}
+  .exp .abar>i{display:block;height:100%;background:var(--color-accent);min-width:2px;border-radius:7px;}
+  .exp .arm.lead .abar>i{background:var(--color-gold);}
+  .exp .lift{font-size:.75rem;margin-top:8px;color:var(--color-text-muted);}
+  .exp .lift b{color:var(--color-accent-dark);}
 
   /* ==== modal + toast ==== */
   .scrim{position:fixed;inset:0;background:rgba(17,45,78,.55);display:none;align-items:center;justify-content:center;padding:20px;z-index:50;}
@@ -147,7 +160,7 @@
     <div class="cards" id="dTotals"><div class="empty">Loading&hellip;</div></div>
     <h2>Funnel &middot; last 7 days</h2>
     <div class="cards" id="dFunnel"><div class="empty">Loading&hellip;</div></div>
-    <h2>A/B &middot; Early Email</h2>
+    <h2>Experiments &middot; A/B head-to-head</h2>
     <div id="dAB"><div class="empty">Loading&hellip;</div></div>
     <h2>Calibration</h2>
     <div id="dCal"><div class="empty">No decisions yet.</div></div>
@@ -461,14 +474,37 @@ function loadDash(){
       '</tbody></table>':'<div class="empty">No funnel activity in 30 days.</div>';
   }).catch(function(){document.getElementById("dDemand").innerHTML='<div class="empty">Demand view unavailable (apply schema-admin.sql).</div>';});
 
-  // A/B tester: distinct visitors per arm; email conversion is the test's primary metric
-  sfetch("admin_ab_variants?select=*&order=variant.asc").then(function(rows){
-    if(!rows.length){document.getElementById("dAB").innerHTML='<div class="empty">No variant-tagged events yet.</div>';return;}
-    function pct(a,b){return b?(100*a/b).toFixed(1)+"%":"—";}
-    document.getElementById("dAB").innerHTML=
-      '<table><thead><tr><th>Variant</th><th>Visitors</th><th>Saw ask</th><th>Emails</th><th>Conv</th><th>Sources</th></tr></thead><tbody>'+
-      rows.map(function(r){return '<tr><td>'+esc(r.variant)+'</td><td>'+r.visitors+'</td><td>'+r.saw_email_ask+'</td><td>'+r.emails+'</td><td><b>'+pct(r.emails,r.visitors)+'</b></td><td>'+r.added_sources+'</td></tr>';}).join("")+
-      '</tbody></table>';
+  /* ---- experiments: head-to-head charts, config-driven so future tests are one
+     entry here (plus their meta.variant values landing in admin_ab_variants).
+     control arm ALWAYS listed first; primary metric = num/den from the view row. */
+  var AB_TESTS=[
+    {name:"Early Email", metric:"email conversion (emails / visitors)",
+     arms:[["control","Control — ask after diagnosis"],["early_email","Variant — ask after courts"]],
+     num:"emails", den:"visitors"}
+    // future tests slot in here, e.g.:
+    // {name:"...", metric:"...", arms:[["control_x","Control"],["variant_x","Variant"]], num:"...", den:"..."}
+  ];
+  sfetch("admin_ab_variants?select=*").then(function(rows){
+    var byArm={};rows.forEach(function(r){byArm[r.variant]=r;});
+    function rate(r,t){return (r&&r[t.den])?r[t.num]/r[t.den]:0;}
+    var html=AB_TESTS.map(function(t){
+      var rates=t.arms.map(function(a){return rate(byArm[a[0]],t);});
+      var max=Math.max.apply(null,rates.concat([0.0001]));
+      var lead=rates.indexOf(Math.max.apply(null,rates));
+      var arms=t.arms.map(function(a,i){
+        var r=byArm[a[0]],pc=(100*rates[i]).toFixed(1);
+        return '<div class="arm'+(i===lead&&rates[i]>0?' lead':'')+'">'+
+          '<div class="top"><span>'+esc(a[1])+'</span><b>'+(r?pc+'%':'—')+'</b></div>'+
+          '<div class="abar"><i style="width:'+Math.round(100*rates[i]/max)+'%"></i></div>'+
+          '<div class="sub">'+(r?(r[t.num]+' / '+r[t.den]+' visitors'):'no traffic yet')+'</div></div>';
+      }).join("");
+      // lift vs control (arm 0), only meaningful once both arms have traffic
+      var c=rates[0],v=rates[1],lift=(c>0&&byArm[t.arms[1][0]])?((v-c)/c*100).toFixed(0):null;
+      var n=t.arms.reduce(function(s,a){var r=byArm[a[0]];return s+(r?r[t.den]:0);},0);
+      return '<div class="exp"><div class="name">'+esc(t.name)+'</div><div class="metric">'+esc(t.metric)+'</div>'+arms+
+        '<div class="lift">'+(lift!==null?('Lift vs control: <b>'+(lift>0?'+':'')+lift+'%</b> · '):'')+n+' visitors total'+(n<100?' · small sample, directional only':'')+'</div></div>';
+    }).join("");
+    document.getElementById("dAB").innerHTML=html||'<div class="empty">No experiments configured.</div>';
   }).catch(function(){document.getElementById("dAB").innerHTML='<div class="empty">A/B view unavailable (re-run schema-admin.sql).</div>';});
 
   sfetch("admin_calibration?select=*").then(function(rows){
