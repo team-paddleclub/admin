@@ -150,6 +150,7 @@
     <h2>Calibration</h2>
     <div id="dCal"><div class="empty">No decisions yet.</div></div>
     <h2>Demand &middot; top cities, 30 days</h2>
+    <div class="cards" id="dDemandTot"></div>
     <div id="dDemand"><div class="empty">Loading&hellip;</div></div>
   </div>
 </main>
@@ -437,6 +438,10 @@ function loadDash(){
       '<div class="stat"><div class="n">'+(t.report_requests||0)+'</div><div class="l">Report requests</div></div>'+
       '<div class="stat"><div class="n">'+(t.unique_users||0)+'</div><div class="l">Unique users</div></div>'+
       '<div class="stat"><div class="n">'+(t.cities_requested||0)+'</div><div class="l">Cities requested</div></div>';
+    // demand event totals live in the same view (30d window matches the table below)
+    document.getElementById("dDemandTot").innerHTML=
+      '<div class="stat"><div class="n">'+(t.funnel_events_30d||0)+'</div><div class="l">Events · 30d</div></div>'+
+      '<div class="stat"><div class="n">'+(t.funnel_visitors_30d||0)+'</div><div class="l">Visitors · 30d</div></div>';
   }).catch(function(){document.getElementById("dTotals").innerHTML='<div class="empty">Totals view unavailable (re-run schema-admin.sql).</div>';});
 
   sfetch("funnel_metrics_daily?select=*&order=day.desc&limit=7").then(function(rows){
