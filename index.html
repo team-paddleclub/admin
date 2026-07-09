@@ -143,6 +143,8 @@
 
   <!-- ================= DASHBOARD ================= -->
   <div id="viewD" class="view">
+    <h2>Totals &middot; all time</h2>
+    <div class="cards" id="dTotals"><div class="empty">Loading&hellip;</div></div>
     <h2>Funnel &middot; last 7 days</h2>
     <div class="cards" id="dFunnel"><div class="empty">Loading&hellip;</div></div>
     <h2>Calibration</h2>
@@ -428,6 +430,15 @@ function wilsonLB(correct,n){
   return (p+z*z/(2*n)-z*Math.sqrt((p*(1-p)+z*z/(4*n))/n))/(1+z*z/n);
 }
 function loadDash(){
+  // all-time totals; unique_users = distinct emails normalized in SQL (+tags stripped, gmail dots)
+  sfetch("admin_totals?select=*").then(function(rows){
+    var t=rows&&rows[0];if(!t)throw new Error("empty");
+    document.getElementById("dTotals").innerHTML=
+      '<div class="stat"><div class="n">'+(t.report_requests||0)+'</div><div class="l">Report requests</div></div>'+
+      '<div class="stat"><div class="n">'+(t.unique_users||0)+'</div><div class="l">Unique users</div></div>'+
+      '<div class="stat"><div class="n">'+(t.cities_requested||0)+'</div><div class="l">Cities requested</div></div>';
+  }).catch(function(){document.getElementById("dTotals").innerHTML='<div class="empty">Totals view unavailable (re-run schema-admin.sql).</div>';});
+
   sfetch("funnel_metrics_daily?select=*&order=day.desc&limit=7").then(function(rows){
     function s(k){return rows.reduce(function(a,r){return a+(r[k]||0);},0);}
     var m=[["started","Started"],["reached_diagnosis","Diagnosis"],["contributed","Contributed"],["identified","Identified"]];
