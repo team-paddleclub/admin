@@ -196,7 +196,7 @@ localStorage.removeItem("PC_ADMIN_KEY"); // clean up any key stored by earlier v
 /* ============================================================
    DATA
    ============================================================ */
-var QUEUE=[], DEMAND={}, DEMO=false, SORT="priority", PAGE=0, VIEWLIST=[];
+var QUEUE=[], DEMAND={}, DEMO=false, SORT="priority", PAGE=0, VIEWLIST=[], TEST_PHASE=true;
 
 function sfetch(path){
   return fetch(SUPA+"/rest/v1/"+path,{headers:{apikey:KEY,Authorization:"Bearer "+KEY}})
@@ -216,10 +216,15 @@ var DEMO_DATA=[
 function loadQueue(){
   Promise.all([
     sfetch("admin_review_queue?select=*&limit=2000"),
-    sfetch("admin_city_demand?select=*").catch(function(){return [];})
+    sfetch("admin_city_demand?select=*").catch(function(){return [];}),
+    sfetch("admin_totals?select=report_requests").catch(function(){return [];})
   ]).then(function(res){
     QUEUE=res[0];
     res[1].forEach(function(d){DEMAND[d.city_slug]=d;});
+    // TEST PHASE (until 1,000 report requests): Demand tab shows ONLY cities
+    // with funnel traffic — a direct readout that tester demand reaches the
+    // queue. At >=1000 it auto-reverts to demand-first over the full queue.
+    TEST_PHASE=((res[2][0]||{}).report_requests||0)<1000;
     renderQueue();
   }).catch(function(){
     DEMO=true; QUEUE=DEMO_DATA.slice();
@@ -289,6 +294,7 @@ function buildList(){
     return items;
   }
   if(SORT==="demand"){
+    if(TEST_PHASE) items=items.filter(function(v){return ((DEMAND[v.city_query]||{}).events_30d||0)>0;});
     items.sort(function(a,b){
       return (((DEMAND[b.city_query]||{}).events_30d||0)-((DEMAND[a.city_query]||{}).events_30d||0)) || priority(b)-priority(a);
     });
