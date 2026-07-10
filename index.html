@@ -290,6 +290,10 @@ window.searchInput=function(){
   if(q.length>=2 && !DEMO) SDEB=setTimeout(function(){serverSearch(q);},250);
 };
 function setSort(s){
+  /* a MANUAL tab tap always wins: cancel any pending return-to-context restore
+     (2026-07-08 bug: if the stashed venue never reappeared — e.g. already
+     decided — tryRestore hijacked every tab tap back to its stashed tab) */
+  RESTORE=null;try{sessionStorage.removeItem("pc_admin_ctx");}catch(e){}
   SORT=s; PAGE=0;
   ["priority","demand","search"].forEach(function(k){
     document.getElementById("sort"+k.charAt(0).toUpperCase()+k.slice(1)).classList.toggle("on",k===s);
