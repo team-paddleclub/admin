@@ -350,9 +350,10 @@ function cityKey(v){
 
 function card(v,idx){
   var links="";
-  if(v.source_url)      links+='<a href="'+esc(v.source_url)+'" target="_blank" rel="noopener">Pickleheads</a>';
-  if(v.website)         links+='<a href="'+esc(v.website)+'" target="_blank" rel="noopener">Website</a>';
-  if(v.reservation_url) links+='<a href="'+esc(v.reservation_url)+'" target="_blank" rel="noopener">Booking</a>';
+  var rem=' onclick="remember('+(+v.venue_id)+')"'; // stash tab+venue before the hop (see RETURN-TO-CONTEXT)
+  if(v.source_url)      links+='<a href="'+esc(v.source_url)+'" target="_blank" rel="noopener"'+rem+'>Pickleheads</a>';
+  if(v.website)         links+='<a href="'+esc(v.website)+'" target="_blank" rel="noopener"'+rem+'>Website</a>';
+  if(v.reservation_url) links+='<a href="'+esc(v.reservation_url)+'" target="_blank" rel="noopener"'+rem+'>Booking</a>';
   var own=OWNERSHIP.map(function(o){
     return '<button class="chip'+(v.ownership===o[0]?" sys on":"")+'" data-ax="own" data-val="'+o[0]+'" onclick="pick(this,'+idx+')">'+o[1]+'</button>';
   }).join("");
@@ -390,6 +391,43 @@ function renderQueue(append){
     : '<div class="empty">Queue is clear. Nothing awaiting review.</div>';
   document.getElementById("moreBtn").style.display=VIEWLIST.length>slice.length?"block":"none";
   document.getElementById("qmeta").textContent=VIEWLIST.length+" awaiting review"+(SORT==="priority"?" · sorted by uncertainty × impact":"");
+  tryRestore();
+}
+
+/* ============================================================
+   RETURN-TO-CONTEXT (2026-07-08): tapping an evidence link, checking the
+   facility, and coming back often RELOADS this page (mobile Safari evicts
+   it) — which reset to Priority/top. remember() stashes {tab, venue} at the
+   moment of the hop; tryRestore() re-selects the tab, pages down to the
+   venue, scrolls to it, and flashes its card.
+   ============================================================ */
+var RESTORE=null;
+try{RESTORE=JSON.parse(sessionStorage.getItem("pc_admin_ctx")||"null");}catch(e){}
+if(RESTORE&&(Date.now()-(RESTORE.ts||0))>30*60*1000)RESTORE=null; // stale after 30 min
+window.remember=function(vid){
+  try{sessionStorage.setItem("pc_admin_ctx",JSON.stringify({sort:SORT,venue:vid,ts:Date.now()}));}catch(e){}
+};
+function tryRestore(){
+  if(!RESTORE)return;
+  if(SORT!==RESTORE.sort){
+    if(["priority","demand"].indexOf(RESTORE.sort)<0){RESTORE=null;return;}
+    SORT=RESTORE.sort;PAGE=0;
+    ["priority","demand","search"].forEach(function(k){
+      document.getElementById("sort"+k.charAt(0).toUpperCase()+k.slice(1)).classList.toggle("on",k===SORT);
+    });
+    renderQueue();return; // recurses once; SORT now matches so it proceeds below
+  }
+  var idx=-1;
+  for(var i=0;i<VIEWLIST.length;i++){if(VIEWLIST[i].venue_id===RESTORE.venue){idx=i;break;}}
+  if(idx<0)return;                     // not loaded yet (demand top-up may still add it)
+  var need=Math.floor(idx/PAGE_SIZE);
+  if(need>PAGE){PAGE=need;renderQueue(true);return;} // page down; recursion finishes the job
+  var el=document.getElementById("qc"+idx);
+  if(!el)return;
+  RESTORE=null;try{sessionStorage.removeItem("pc_admin_ctx");}catch(e){}
+  el.scrollIntoView({block:"center"});
+  el.style.transition="box-shadow .3s";el.style.boxShadow="0 0 0 3px var(--color-gold)";
+  setTimeout(function(){el.style.boxShadow="";},1600);
 }
 
 /* court count stepper; note appears only when Troy changes the system value */
