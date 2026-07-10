@@ -244,7 +244,7 @@ function uncertainty(v){
 function impact(v){
   var courts=v.court_count||2;
   var pop=Math.max(v.population||1000,1000);
-  var demand=(DEMAND[v.city_query]||{}).events_30d||0;
+  var demand=(DEMAND[cityKey(v)]||{}).events_30d||0;
   return courts*(1+Math.log10(pop)/4)*(1+Math.min(demand,50)/25);
 }
 function priority(v){ return uncertainty(v)*impact(v); }
@@ -294,9 +294,9 @@ function buildList(){
     return items;
   }
   if(SORT==="demand"){
-    if(TEST_PHASE) items=items.filter(function(v){return ((DEMAND[v.city_query]||{}).events_30d||0)>0;});
+    if(TEST_PHASE) items=items.filter(function(v){return ((DEMAND[cityKey(v)]||{}).events_30d||0)>0;});
     items.sort(function(a,b){
-      return (((DEMAND[b.city_query]||{}).events_30d||0)-((DEMAND[a.city_query]||{}).events_30d||0)) || priority(b)-priority(a);
+      return (((DEMAND[cityKey(b)]||{}).events_30d||0)-((DEMAND[cityKey(a)]||{}).events_30d||0)) || priority(b)-priority(a);
     });
     return items;
   }
@@ -319,6 +319,14 @@ function buildList(){
 function esc(s){return String(s==null?"":s).replace(/[&<>"]/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c];});}
 function pretty(slug){return String(slug||"").replace(/-[a-z]{2}$/,"").replace(/-/g," ").replace(/\b\w/g,function(c){return c.toUpperCase();});}
 function stateAbbr(slug){var m=String(slug||"").match(/-([a-z]{2})$/);return m?m[1].toUpperCase():"";}
+/* venue_seed stores city_query ("carlsbad") + state_query ("california") SEPARATELY,
+   but funnel demand is keyed "carlsbad-ca". This map bridges them — without it the
+   DEMAND lookups never matched (bug found 2026-07-08: demand never reached the sorts). */
+var ST={alabama:"al",alaska:"ak",arizona:"az",arkansas:"ar",california:"ca",colorado:"co",connecticut:"ct",delaware:"de","district-of-columbia":"dc",florida:"fl",georgia:"ga",hawaii:"hi",idaho:"id",illinois:"il",indiana:"in",iowa:"ia",kansas:"ks",kentucky:"ky",louisiana:"la",maine:"me",maryland:"md",massachusetts:"ma",michigan:"mi",minnesota:"mn",mississippi:"ms",missouri:"mo",montana:"mt",nebraska:"ne",nevada:"nv","new-hampshire":"nh","new-jersey":"nj","new-mexico":"nm","new-york":"ny","north-carolina":"nc","north-dakota":"nd",ohio:"oh",oklahoma:"ok",oregon:"or",pennsylvania:"pa","rhode-island":"ri","south-carolina":"sc","south-dakota":"sd",tennessee:"tn",texas:"tx",utah:"ut",vermont:"vt",virginia:"va",washington:"wa","west-virginia":"wv",wisconsin:"wi",wyoming:"wy","puerto-rico":"pr"};
+function cityKey(v){
+  if(/-[a-z]{2}$/.test(v.city_query||"")) return v.city_query;      // demo rows already suffixed
+  var ab=ST[v.state_query]; return ab?(v.city_query+"-"+ab):v.city_query;
+}
 
 function card(v,idx){
   var links="";
@@ -331,10 +339,10 @@ function card(v,idx){
   var cost=COST.map(function(o){
     return '<button class="chip'+(v.cost===o[0]?" sys on":"")+'" data-ax="cost" data-val="'+o[0]+'" onclick="pick(this,'+idx+')"'+(v.ownership==="private"?" disabled":"")+'>'+o[1]+'</button>';
   }).join("");
-  var demand=(DEMAND[v.city_query]||{}).events_30d;
+  var demand=(DEMAND[cityKey(v)]||{}).events_30d;
   return '<div class="qcard" id="qc'+idx+'">'+
     '<div class="vname">'+esc(v.venue_name||"(unnamed venue)")+'</div>'+
-    '<div class="vcity">'+pretty(v.city_query)+', '+stateAbbr(v.city_query)+(demand?' &middot; '+demand+' funnel events/30d':'')+'</div>'+
+    '<div class="vcity">'+pretty(v.city_query)+', '+stateAbbr(cityKey(v))+(demand?' &middot; '+demand+' funnel events/30d':'')+'</div>'+
     '<div class="vmeta">'+(v.court_count||"?")+' courts &middot; access tag: '+esc(v.access||"none")+(v.facility_type?' &middot; '+esc(v.facility_type):'')+'</div>'+
     '<div class="links">'+(links||'<span style="font-size:.74rem;color:var(--color-text-muted)">No evidence links — name only</span>')+'</div>'+
     '<div class="axis">Ownership</div><div class="chips" id="own'+idx+'">'+own+'</div>'+
