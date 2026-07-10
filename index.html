@@ -226,11 +226,31 @@ function loadQueue(){
     // queue. At >=1000 it auto-reverts to demand-first over the full queue.
     TEST_PHASE=((res[2][0]||{}).report_requests||0)<1000;
     renderQueue();
+    fetchDemandCities(res[1]); // top-up: demand cities beyond the first-2000 slice
   }).catch(function(){
     DEMO=true; QUEUE=DEMO_DATA.slice();
     document.getElementById("demoBanner").style.display="block";
     renderQueue();
   });
+}
+
+/* Demand cities can live beyond the first-2000 queue slice the client loads
+   (found 2026-07-08: Carlsbad had queue items but never appeared). Fetch their
+   rows explicitly and merge — Demand tab must never miss a demand city. */
+function fetchDemandCities(demand){
+  if(DEMO||!demand||!demand.length)return;
+  var REV={};Object.keys(ST).forEach(function(k){REV[ST[k]]=k;});
+  var conds=[];
+  demand.forEach(function(d){
+    var m=String(d.city_slug||"").match(/^(.*)-([a-z]{2})$/);
+    if(m&&REV[m[2]])conds.push("and(city_query.eq."+m[1]+",state_query.eq."+REV[m[2]]+")");
+  });
+  if(!conds.length)return;
+  sfetch("admin_review_queue?select=*&or=("+conds.join(",")+")&limit=500").then(function(rows){
+    var seen={};QUEUE.forEach(function(v){seen[v.venue_id]=1;});
+    var added=0;rows.forEach(function(v){if(!seen[v.venue_id]){QUEUE.push(v);added++;}});
+    if(added)renderQueue();
+  }).catch(function(){});
 }
 
 /* ============================================================
