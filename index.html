@@ -202,6 +202,9 @@
     <h2>Demand &middot; top cities, 30 days</h2>
     <div class="cards" id="dDemandTot"></div>
     <div id="dDemand"><div class="empty">Loading&hellip;</div></div>
+    <h2>Ground truth &middot; verified-city review</h2>
+    <div class="qmeta" style="margin:0 2px 10px">Carlsbad + Santa Monica are the calibration baseline. Tap another verified city to pull its queue items and add ground truth.</div>
+    <div class="cards" id="dGT"></div>
   </div>
 </main>
 
@@ -409,6 +412,9 @@ function card(v,idx){
   if(v.source_url)      links+='<a href="'+esc(v.source_url)+'" target="_blank" rel="noopener"'+rem+'>Pickleheads</a>';
   if(v.website)         links+='<a href="'+esc(v.website)+'" target="_blank" rel="noopener"'+rem+'>Website</a>';
   if(v.reservation_url) links+='<a href="'+esc(v.reservation_url)+'" target="_blank" rel="noopener"'+rem+'>Booking</a>';
+  var ctype=[["dedicated","Dedicated"],["shared","Shared"]].map(function(o){
+    return '<button class="chip'+(v.court_type===o[0]?" sys on":"")+'" data-ax="ctype" data-val="'+o[0]+'" onclick="pick(this,'+idx+')">'+o[1]+'</button>';
+  }).join("");
   var own=OWNERSHIP.map(function(o){
     return '<button class="chip'+(v.ownership===o[0]?" sys on":"")+'" data-ax="own" data-val="'+o[0]+'" onclick="pick(this,'+idx+')">'+o[1]+'</button>';
   }).join("");
@@ -422,6 +428,7 @@ function card(v,idx){
     '<div class="vmeta">'+(v.court_count||"?")+' courts &middot; access tag: '+esc(v.access||"none")+(v.facility_type?' &middot; '+esc(v.facility_type):'')+
       ' &middot; provider: <b>'+(v.ownership?esc((OWNERSHIP.filter(function(o){return o[0]===v.ownership;})[0]||[0,v.ownership])[1]):'unclassified')+'</b>'+(v.cost?' / '+esc((COST.filter(function(o){return o[0]===v.cost;})[0]||[0,v.cost])[1]).toLowerCase():'')+'</div>'+
     '<div class="links">'+(links||'<span style="font-size:.74rem;color:var(--color-text-muted)">No evidence links — name only</span>')+'</div>'+
+    '<div class="axis">Court type</div><div class="chips" id="ctype'+idx+'">'+ctype+'</div>'+
     '<div class="axis">Ownership</div><div class="chips" id="own'+idx+'">'+own+'</div>'+
     '<div class="axis">Cost</div><div class="chips" id="cost'+idx+'">'+cost+'</div>'+
     '<div class="axis">Court count</div><div class="count">'+
@@ -496,7 +503,7 @@ window.cstep=function(idx,d){
 };
 /* chip selection; private ownership clears + disables cost axis */
 window.pick=function(btn,idx){
-  var ax=btn.dataset.ax, host=document.getElementById((ax==="own"?"own":"cost")+idx);
+  var ax=btn.dataset.ax, host=document.getElementById(ax+idx);  // own / cost / ctype
   host.querySelectorAll(".chip").forEach(function(c){c.classList.remove("on");});
   btn.classList.add("on");
   if(ax==="own"){
@@ -521,6 +528,7 @@ window.decide=function(idx,verdict){
     system_ownership:v.ownership||null, system_cost:v.cost||null,
     chosen_ownership:verdict==="approve"?selected(idx,"own"):null,
     chosen_cost:verdict==="approve"?selected(idx,"cost"):null,
+    chosen_court_type:verdict==="approve"?selected(idx,"ctype"):null,
     chosen_courts:(function(){if(verdict!=="approve")return null;
       var s=document.getElementById("cc"+idx);if(!s)return null;
       var n=parseInt(s.textContent,10);
@@ -663,6 +671,7 @@ function wilsonLB(correct,n){
 }
 function loadDash(){
   loadInq();
+  renderGT();
   // all-time totals; unique_users = distinct emails normalized in SQL (+tags stripped, gmail dots)
   sfetch("admin_totals?select=*").then(function(rows){
     var t=rows&&rows[0];if(!t)throw new Error("empty");
@@ -746,6 +755,32 @@ function loadDash(){
 }
 
 /* ============================================================
+   GROUND TRUTH (2026-07-13): the 7 verified cities beyond the
+   Carlsbad + Santa Monica baseline. Tapping one hops to the Queue
+   tab in Search mode with the city pre-queried (server search covers
+   the whole queue), so Troy can decide its venues = more ground truth.
+   ============================================================ */
+var GT_CITIES=[["austin","Austin, TX"],["beverly hills","Beverly Hills, CA"],["naples","Naples, FL"],["santa barbara","Santa Barbara, CA"],["scottsdale","Scottsdale, AZ"],["st petersburg","St. Petersburg, FL"],["venice","Venice, CA"]];
+var GT_PENDING=null;
+function renderGT(){
+  document.getElementById("dGT").innerHTML=GT_CITIES.map(function(c){
+    return '<button class="stat" style="cursor:pointer;border-color:var(--color-border);font-family:inherit;text-align:left" onclick="gtReview(\''+c[0]+'\')">'+
+      '<div class="n" style="font-size:.95rem">'+esc(c[1])+'</div><div class="l">Review queue &rarr;</div></button>';
+  }).join("");
+}
+window.gtReview=function(q){
+  GT_PENDING=q;
+  if(CUR_TAB!=="q")tab("q");else applyGT();
+};
+function applyGT(){
+  if(GT_PENDING==null)return;
+  var q=GT_PENDING;GT_PENDING=null;
+  setSort("search");
+  var sb=document.getElementById("searchbox");sb.value=q;
+  searchInput();
+}
+
+/* ============================================================
    SHELL
    ============================================================ */
 /* Tab switch = a history entry, so iOS back-swipe returns Dashboard -> Queue
@@ -759,6 +794,7 @@ function render(t){
   document.getElementById("tabD").classList.toggle("on",t==="d");
   window.scrollTo(0,0);  // each tab opens at its top — no inherited scroll jump (Troy #5 2026-07-05)
   if(t==="d") loadDash();
+  if(t==="q") applyGT();  // ground-truth hop lands here after the tab switch
 }
 function tab(t){                       // user tapped a tab
   if(t===CUR_TAB) return;
