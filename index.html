@@ -180,6 +180,7 @@
       <button id="sortSearch" onclick="setSort('search')">Search</button>
     </div>
     <input id="searchbox" type="search" placeholder="City or venue name&hellip;" oninput="searchInput()">
+    <div class="chips" id="comboRow" style="display:none;margin-top:8px"></div>
     <div class="qmeta" id="qmeta">Loading queue&hellip;</div>
     <div id="qlist"></div>
     <button class="more" id="moreBtn" style="display:none" onclick="PAGE++;renderQueue(true)">Show more</button>
@@ -334,6 +335,7 @@ function serverSearch(q){
     .catch(function(){});
 }
 window.searchInput=function(){
+  SEARCH_COMBO=null;                   // new text = new ambiguity; drop any picked combo
   renderQueue();                       // instant, over loaded rows
   clearTimeout(SDEB);
   var q=(document.getElementById("searchbox").value||"").toLowerCase().trim();
@@ -345,6 +347,8 @@ function setSort(s){
      decided — tryRestore hijacked every tab tap back to its stashed tab) */
   RESTORE=null;try{sessionStorage.removeItem("pc_admin_ctx");}catch(e){}
   SORT=s; PAGE=0;
+  SEARCH_COMBO=null;
+  var _cr=document.getElementById("comboRow");if(_cr){_cr.style.display="none";_cr.innerHTML="";}
   ["priority","demand","search"].forEach(function(k){
     document.getElementById("sort"+k.charAt(0).toUpperCase()+k.slice(1)).classList.toggle("on",k===s);
   });
@@ -364,6 +368,14 @@ function buildList(){
     else if(q) items=items.filter(function(v){
       return norm(v.venue_name).indexOf(norm(q))>=0 || (v.city_query||"").indexOf(norm(q).replace(/\s+/g,"-"))>=0;
     });
+    /* city+state chooser (2026-07-13, Troy's call): "beverly hills" matches
+       Beverly Hills CA *and* MI — surface every combo as a chip and filter to
+       the tapped one instead of guessing. Hidden when only one combo matches. */
+    var combos={},corder=[];
+    items.forEach(function(v){var k=v.city_query+"|"+v.state_query;
+      if(!combos[k]){combos[k]={c:v.city_query,s:v.state_query,n:0};corder.push(k);}combos[k].n++;});
+    renderCombos(corder.map(function(k){return combos[k];}));
+    if(SEARCH_COMBO)items=items.filter(function(v){return v.city_query===SEARCH_COMBO.c&&v.state_query===SEARCH_COMBO.s;});
     items.sort(function(a,b){return (a.city_query||"").localeCompare(b.city_query||"");});
     return items;
   }
@@ -753,6 +765,21 @@ function loadDash(){
       '<div class="empty">'+totAll+' decision'+(totAll===1?'':'s')+' logged, 0 blind audits so far. Calibration charts only fill from blind audits: roughly every 5th card in Priority mode is a high-confidence item dealt incognito — it looks identical, just keep deciding top-of-queue cards and they accumulate on their own.</div>';
   }).catch(function(){});
 }
+
+var SEARCH_COMBO=null;
+function renderCombos(list){
+  var host=document.getElementById("comboRow");
+  if(SORT!=="search"||list.length<2){host.style.display="none";host.innerHTML="";return;}
+  host.style.display="flex";
+  host.innerHTML=list.map(function(x){
+    var on=SEARCH_COMBO&&SEARCH_COMBO.c===x.c&&SEARCH_COMBO.s===x.s;
+    return '<button class="chip'+(on?" on":"")+'" onclick="pickCombo(\''+esc(x.c)+'\',\''+esc(x.s)+'\')">'+pretty(x.c)+', '+((ST[x.s]||x.s).toUpperCase())+' ('+x.n+')</button>';
+  }).join("");
+}
+window.pickCombo=function(c,s){
+  SEARCH_COMBO=(SEARCH_COMBO&&SEARCH_COMBO.c===c&&SEARCH_COMBO.s===s)?null:{c:c,s:s}; // tap again = clear
+  PAGE=0;renderQueue();
+};
 
 /* ============================================================
    GROUND TRUTH (2026-07-13): the 7 verified cities beyond the
