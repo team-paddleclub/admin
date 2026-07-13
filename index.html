@@ -128,7 +128,9 @@
   .inq.open .body{display:block;}
   .inq .body .row{margin-bottom:6px;color:var(--color-text-muted);}
   .inq .body .row b{color:var(--color-text);font-weight:600;}
-  .inq .body a{color:var(--color-accent);font-weight:600;text-decoration:none;}
+  .inq .body .row a{color:var(--color-accent);font-weight:600;text-decoration:none;}
+  .inq .acts a.b-mail{color:#fff;font-weight:700;}
+  .inq .acts a.b-call{color:var(--color-accent-dark);font-weight:700;}
   .inq .msg{background:var(--color-bg);border-radius:var(--radius-md);padding:9px 11px;margin:8px 0;white-space:pre-wrap;color:var(--color-text);}
   .inq .acts{display:flex;gap:8px;margin-top:10px;}
   .inq .acts a,.inq .acts button{flex:1;text-align:center;font-family:inherit;font-weight:700;font-size:.78rem;padding:9px 4px;border-radius:var(--radius-md);border:0;cursor:pointer;text-decoration:none;}
@@ -417,7 +419,8 @@ function card(v,idx){
   return '<div class="qcard" id="qc'+idx+'">'+
     '<div class="vname">'+esc(v.venue_name||"(unnamed venue)")+'</div>'+
     '<div class="vcity">'+pretty(v.city_query)+', '+stateAbbr(cityKey(v))+(demand?' &middot; '+demand+' funnel events/30d':'')+'</div>'+
-    '<div class="vmeta">'+(v.court_count||"?")+' courts &middot; access tag: '+esc(v.access||"none")+(v.facility_type?' &middot; '+esc(v.facility_type):'')+'</div>'+
+    '<div class="vmeta">'+(v.court_count||"?")+' courts &middot; access tag: '+esc(v.access||"none")+(v.facility_type?' &middot; '+esc(v.facility_type):'')+
+      ' &middot; provider: <b>'+(v.ownership?esc((OWNERSHIP.filter(function(o){return o[0]===v.ownership;})[0]||[0,v.ownership])[1]):'unclassified')+'</b>'+(v.cost?' / '+esc((COST.filter(function(o){return o[0]===v.cost;})[0]||[0,v.cost])[1]).toLowerCase():'')+'</div>'+
     '<div class="links">'+(links||'<span style="font-size:.74rem;color:var(--color-text-muted)">No evidence links — name only</span>')+'</div>'+
     '<div class="axis">Ownership</div><div class="chips" id="own'+idx+'">'+own+'</div>'+
     '<div class="axis">Cost</div><div class="chips" id="cost'+idx+'">'+cost+'</div>'+
