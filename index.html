@@ -236,6 +236,7 @@ localStorage.removeItem("PC_ADMIN_KEY"); // clean up any key stored by earlier v
    DATA
    ============================================================ */
 var QUEUE=[], DEMAND={}, DEMO=false, SORT="priority", PAGE=0, VIEWLIST=[], TEST_PHASE=true;
+var BLINDPOOL=[], DECIDED={};  // 2026-07-13: explicit high-conf pool for blind audits (see buildList)
 
 function sfetch(path){
   return fetch(SUPA+"/rest/v1/"+path,{headers:{apikey:KEY,Authorization:"Bearer "+KEY}})
@@ -256,9 +257,14 @@ function loadQueue(){
   Promise.all([
     sfetch("admin_review_queue?select=*&limit=2000"),
     sfetch("admin_city_demand?select=*").catch(function(){return [];}),
-    sfetch("admin_totals?select=report_requests").catch(function(){return [];})
+    sfetch("admin_totals?select=report_requests").catch(function(){return [];}),
+    // blind-audit pool fetched EXPLICITLY: the first-2000 slice often holds no
+    // high-conf rows at all, so the 1-in-5 blind interleave never fired and
+    // Calibration stayed empty (found 2026-07-13, 11 decisions / 0 blind)
+    sfetch("admin_review_queue?select=*&ownership_conf=eq.high&limit=300").catch(function(){return [];})
   ]).then(function(res){
     QUEUE=res[0];
+    BLINDPOOL=res[3]||[];
     res[1].forEach(function(d){DEMAND[d.city_slug]=d;});
     // TEST PHASE (until 1,000 report requests): Demand tab shows ONLY cities
     // with funnel traffic — a direct readout that tester demand reaches the
@@ -365,7 +371,11 @@ function buildList(){
   }
   // Priority: sort the uncertain pool, then interleave 1-in-5 random HIGH-conf
   // items (tagged _blind) — Troy can't tell them apart, that's the point.
-  var pool=items.filter(function(v){return v.ownership_conf==="high";});
+  // Pool = the dedicated high-conf fetch (BLINDPOOL), falling back to whatever
+  // high-conf rows the slice happens to hold; decided ids are excluded so a
+  // reshuffle never re-deals an already-audited card.
+  var poolSrc=BLINDPOOL.length?BLINDPOOL:items;
+  var pool=poolSrc.filter(function(v){return v.ownership_conf==="high" && !DECIDED[v.venue_id];});
   var main=items.filter(function(v){return v.ownership_conf!=="high";})
                 .sort(function(a,b){return priority(b)-priority(a);});
   var out=[],pi=0;
@@ -550,6 +560,7 @@ function finishCard(idx,v,verdict,p){
   // ran before this fired, then the timer re-locked the card until reload)
   el._doneTimer=setTimeout(function(){el.classList.add("done");el._doneTimer=null;},1200);
   QUEUE=QUEUE.filter(function(q){return q.venue_id!==v.venue_id||verdict==="hold";});
+  if(verdict!=="hold")DECIDED[v.venue_id]=true;  // keeps decided blind-pool cards from re-dealing
 }
 
 /* ============================================================
@@ -562,14 +573,23 @@ function finishCard(idx,v,verdict,p){
    ============================================================ */
 var INQ_URL="/api/inquiries", INQ=[];
 var INQ_TYPES={hub:"Hub",brand:"Brand",club:"Club"};
+/* phone -> Gmail APP via its URL scheme (mail.google.com links kept opening
+   browser Gmail without a compose); desktop -> Gmail web compose pinned to
+   account 0 (/u/0/ — without it, multi-account Gmail drops to the inbox) */
+var IS_MOBILE=/iPhone|iPad|iPod|Android/i.test(navigator.userAgent||"");
 function inqFetch(payload){
   return fetch(INQ_URL,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload||{})})
     .then(function(r){return r.json().catch(function(){return {ok:false,reason:"HTTP "+r.status};});});
 }
 function gmailUrl(v){
   var su=encodeURIComponent("Re: your PaddleClub "+(INQ_TYPES[v.inquiry_type]||"partner").toLowerCase()+" inquiry");
-  return "https://mail.google.com/mail/?view=cm&fs=1&to="+encodeURIComponent(v.email)+"&su="+su;
+  var to=encodeURIComponent(v.email);
+  return IS_MOBILE
+    ? "googlegmail://co?to="+to+"&subject="+su
+    : "https://mail.google.com/mail/u/0/?view=cm&fs=1&to="+to+"&su="+su;
 }
+/* app-scheme links must navigate in place — target=_blank on a scheme gets blocked */
+var GM_TGT=IS_MOBILE?"":" target=\"_blank\" rel=\"noopener\"";
 function inqCard(v){
   var d=new Date(v.created_at);
   var when=d.toLocaleDateString(undefined,{month:"short",day:"numeric"})+" "+d.toLocaleTimeString(undefined,{hour:"numeric",minute:"2-digit"});
@@ -581,13 +601,13 @@ function inqCard(v){
       '<span class="car">\u25b8</span>'+
     '</div>'+
     '<div class="body">'+
-      '<div class="row"><b>Email:</b> <a href="'+gmailUrl(v)+'" target="_blank" rel="noopener">'+esc(v.email)+'</a></div>'+
+      '<div class="row"><b>Email:</b> <a href="'+gmailUrl(v)+'"'+GM_TGT+'>'+esc(v.email)+'</a></div>'+
       (v.phone?'<div class="row"><b>Phone:</b> <a href="tel:'+esc(tel)+'">'+esc(v.phone)+'</a></div>':'')+
       (v.location?'<div class="row"><b>Location:</b> '+esc(v.location)+'</div>':'')+
       '<div class="row"><b>Received:</b> '+esc(when)+'</div>'+
       (v.message?'<div class="msg">'+esc(v.message)+'</div>':'')+
       '<div class="acts">'+
-        '<a class="b-mail" href="'+gmailUrl(v)+'" target="_blank" rel="noopener">Email</a>'+
+        '<a class="b-mail" href="'+gmailUrl(v)+'"'+GM_TGT+'>Email</a>'+
         (v.phone?'<a class="b-call" href="tel:'+esc(tel)+'">Call</a>':'')+
         (v.status!=="contacted"?'<button class="b-st" onclick="inqStatus(\''+esc(v.id)+'\',\'contacted\')">Contacted</button>':'')+
         (v.status!=="closed"?'<button class="b-st" onclick="inqStatus(\''+esc(v.id)+'\',\'closed\')">Close</button>':'')+
@@ -704,8 +724,9 @@ function loadDash(){
   sfetch("admin_calibration?select=*").then(function(rows){
     if(!rows.length){return;}
     // graduation math runs on BLIND audits only (unbiased sample)
-    var strata={};
+    var strata={}, totAll=0, totBlind=0;
     rows.forEach(function(r){
+      totAll+=r.decisions; if(r.was_blind)totBlind+=r.decisions;
       if(!r.was_blind) return;
       var s=strata[r.stratum]=strata[r.stratum]||{n:0,ok:0};
       s.n+=r.decisions; s.ok+=r.system_correct;
@@ -716,7 +737,8 @@ function loadDash(){
         '<div class="bar"><i style="width:'+(lb?Math.round(lb*100):0)+'%"></i><b style="left:93%"></b></div>'+
         '<div class="foot">CI lower bound: <b>'+(lb?(100*lb).toFixed(1)+"%":"—")+'</b> · graduation: ≥93% display fields / ≥98% count-bearing (red line = 93%)</div></div>';
     }).join("");
-    document.getElementById("dCal").innerHTML=html||'<div class="empty">No blind audits yet — decide items in Priority mode to accumulate them.</div>';
+    document.getElementById("dCal").innerHTML=html||
+      '<div class="empty">'+totAll+' decision'+(totAll===1?'':'s')+' logged, 0 blind audits so far. Calibration charts only fill from blind audits: roughly every 5th card in Priority mode is a high-confidence item dealt incognito — it looks identical, just keep deciding top-of-queue cards and they accumulate on their own.</div>';
   }).catch(function(){});
 }
 
