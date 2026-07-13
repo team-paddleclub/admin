@@ -113,6 +113,35 @@
   .exp .arm.lead .abar>i{background:var(--color-gold);}
   .exp .lift{font-size:.75rem;margin-top:8px;color:var(--color-text-muted);}
   .exp .lift b{color:var(--color-accent-dark);}
+  /* ==== inquiries (hub/partner leads, 2026-07-12) ==== */
+  .inq{background:var(--color-surface);border:1px solid var(--color-border);border-radius:var(--radius-md);margin-bottom:8px;overflow:hidden;}
+  .inq .head{display:flex;align-items:center;gap:10px;padding:12px 14px;cursor:pointer;}
+  .inq .who{flex:1;min-width:0;}
+  .inq .nm{font-weight:700;font-size:.9rem;}
+  .inq .org{font-size:.75rem;color:var(--color-text-muted);margin-top:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .inq .typ{font-size:.62rem;font-weight:700;text-transform:uppercase;letter-spacing:.05em;padding:3px 8px;border-radius:99px;background:var(--color-accent-lt);color:var(--color-accent-dark);white-space:nowrap;}
+  .inq.st-contacted .typ{background:#FBF0D6;color:var(--color-gold-dark);}
+  .inq.st-closed{opacity:.55;}
+  .inq .car{color:var(--color-text-muted);transition:transform .15s;font-size:.8rem;}
+  .inq.open .car{transform:rotate(90deg);}
+  .inq .body{display:none;border-top:1px solid var(--color-border);padding:12px 14px;font-size:.82rem;}
+  .inq.open .body{display:block;}
+  .inq .body .row{margin-bottom:6px;color:var(--color-text-muted);}
+  .inq .body .row b{color:var(--color-text);font-weight:600;}
+  .inq .body a{color:var(--color-accent);font-weight:600;text-decoration:none;}
+  .inq .msg{background:var(--color-bg);border-radius:var(--radius-md);padding:9px 11px;margin:8px 0;white-space:pre-wrap;color:var(--color-text);}
+  .inq .acts{display:flex;gap:8px;margin-top:10px;}
+  .inq .acts a,.inq .acts button{flex:1;text-align:center;font-family:inherit;font-weight:700;font-size:.78rem;padding:9px 4px;border-radius:var(--radius-md);border:0;cursor:pointer;text-decoration:none;}
+  .inq .b-mail{background:var(--color-accent);color:#fff;}
+  .inq .b-call{background:var(--color-gold);color:var(--color-accent-dark);}
+  .inq .b-st{background:var(--color-bg);border:1px solid var(--color-border)!important;color:var(--color-text-muted);}
+  /* full-screen inbox overlay (exit: X or back-swipe) */
+  #inqOverlay{position:fixed;inset:0;background:var(--color-bg);z-index:40;display:none;overflow:auto;padding-bottom:70px;}
+  #inqOverlay.on{display:block;}
+  #inqOverlay .bar{position:sticky;top:0;background:var(--color-accent-dark);color:#fff;display:flex;align-items:center;justify-content:space-between;padding:14px 16px;z-index:2;}
+  #inqOverlay .bar h2{color:#fff;margin:0;font-size:1.1rem;font-family:var(--font-serif);font-weight:400;}
+  #inqOverlay .bar button{background:none;border:0;color:#fff;font-size:1.6rem;line-height:1;cursor:pointer;padding:0 4px;}
+  #inqOverlay .list{max-width:640px;margin:0 auto;padding:14px 12px;}
 
   /* ==== modal + toast ==== */
   .scrim{position:fixed;inset:0;background:rgba(17,45,78,.55);display:none;align-items:center;justify-content:center;padding:20px;z-index:50;}
@@ -160,6 +189,10 @@
     <div class="cards" id="dTotals"><div class="empty">Loading&hellip;</div></div>
     <h2>Funnel &middot; last 7 days</h2>
     <div class="cards" id="dFunnel"><div class="empty">Loading&hellip;</div></div>
+    <h2>Inquiries &middot; hubs &amp; partners</h2>
+    <div id="dInq"><div class="empty">Loading&hellip;</div></div>
+    <button class="more" id="inqMore" style="display:none;margin-bottom:14px" onclick="openInbox()">Open inbox &rarr;</button>
+
     <h2>Experiments &middot; A/B head-to-head</h2>
     <div id="dAB"><div class="empty">Loading&hellip;</div></div>
     <h2>Calibration</h2>
@@ -169,6 +202,12 @@
     <div id="dDemand"><div class="empty">Loading&hellip;</div></div>
   </div>
 </main>
+
+<!-- full-screen inquiries inbox (2026-07-12) -->
+<div id="inqOverlay" aria-hidden="true">
+  <div class="bar"><h2>Inquiries inbox</h2><button onclick="closeInbox()" aria-label="Close">&times;</button></div>
+  <div class="list" id="inqAll"><div class="empty">Loading&hellip;</div></div>
+</div>
 
 <div id="toast"></div>
 
@@ -514,6 +553,84 @@ function finishCard(idx,v,verdict,p){
 }
 
 /* ============================================================
+   INQUIRIES (2026-07-12): hub/partner leads from the homepage form.
+   The PII table is unreadable by the anon key — list + status updates
+   go through /api/inquiries (Access-gated Pages proxy -> admin-inquiries
+   Edge Function, ADMIN_KEY injected server-side). Email opens Gmail
+   (Troy's pick — mail.google.com opens the Gmail app on phone, Gmail
+   web on desktop); phone renders as tel: for tap-to-call.
+   ============================================================ */
+var INQ_URL="/api/inquiries", INQ=[];
+var INQ_TYPES={hub:"Hub",brand:"Brand",club:"Club"};
+function inqFetch(payload){
+  return fetch(INQ_URL,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload||{})})
+    .then(function(r){return r.json().catch(function(){return {ok:false,reason:"HTTP "+r.status};});});
+}
+function gmailUrl(v){
+  var su=encodeURIComponent("Re: your PaddleClub "+(INQ_TYPES[v.inquiry_type]||"partner").toLowerCase()+" inquiry");
+  return "https://mail.google.com/mail/?view=cm&fs=1&to="+encodeURIComponent(v.email)+"&su="+su;
+}
+function inqCard(v){
+  var d=new Date(v.created_at);
+  var when=d.toLocaleDateString(undefined,{month:"short",day:"numeric"})+" "+d.toLocaleTimeString(undefined,{hour:"numeric",minute:"2-digit"});
+  var tel=v.phone?String(v.phone).replace(/[^+\d]/g,""):"";
+  return '<div class="inq st-'+esc(v.status)+'">'+
+    '<div class="head" onclick="this.parentNode.classList.toggle(\'open\')">'+
+      '<div class="who"><div class="nm">'+esc(v.name)+'</div><div class="org">'+esc(v.org||v.location||"\u2014")+'</div></div>'+
+      '<span class="typ">'+esc(INQ_TYPES[v.inquiry_type]||v.inquiry_type)+(v.status!=="new"?" \u00b7 "+esc(v.status):"")+'</span>'+
+      '<span class="car">\u25b8</span>'+
+    '</div>'+
+    '<div class="body">'+
+      '<div class="row"><b>Email:</b> <a href="'+gmailUrl(v)+'" target="_blank" rel="noopener">'+esc(v.email)+'</a></div>'+
+      (v.phone?'<div class="row"><b>Phone:</b> <a href="tel:'+esc(tel)+'">'+esc(v.phone)+'</a></div>':'')+
+      (v.location?'<div class="row"><b>Location:</b> '+esc(v.location)+'</div>':'')+
+      '<div class="row"><b>Received:</b> '+esc(when)+'</div>'+
+      (v.message?'<div class="msg">'+esc(v.message)+'</div>':'')+
+      '<div class="acts">'+
+        '<a class="b-mail" href="'+gmailUrl(v)+'" target="_blank" rel="noopener">Email</a>'+
+        (v.phone?'<a class="b-call" href="tel:'+esc(tel)+'">Call</a>':'')+
+        (v.status!=="contacted"?'<button class="b-st" onclick="inqStatus(\''+esc(v.id)+'\',\'contacted\')">Contacted</button>':'')+
+        (v.status!=="closed"?'<button class="b-st" onclick="inqStatus(\''+esc(v.id)+'\',\'closed\')">Close</button>':'')+
+      '</div>'+
+    '</div>'+
+  '</div>';
+}
+function renderInq(){
+  var host=document.getElementById("dInq"),btn=document.getElementById("inqMore");
+  if(!INQ.length){host.innerHTML='<div class="empty">No inquiries yet.</div>';btn.style.display="none";}
+  else{
+    host.innerHTML=INQ.slice(0,5).map(inqCard).join("");
+    btn.style.display="block";btn.textContent="Open inbox ("+INQ.length+") \u2192";
+  }
+  document.getElementById("inqAll").innerHTML=INQ.length?INQ.map(inqCard).join(""):'<div class="empty">No inquiries yet.</div>';
+}
+function loadInq(){
+  inqFetch({action:"list",limit:200}).then(function(j){
+    if(!j.ok)throw new Error(j.reason||"unavailable");
+    INQ=j.rows||[];renderInq();
+  }).catch(function(e){
+    document.getElementById("dInq").innerHTML='<div class="empty">Inquiries unavailable ('+esc(e.message)+') \u2014 deploy admin-inquiries + wire ADMIN_KEY.</div>';
+    document.getElementById("inqMore").style.display="none";
+  });
+}
+window.inqStatus=function(id,status){
+  inqFetch({action:"status",id:id,status:status}).then(function(j){
+    if(!j.ok){toast("Update failed ("+(j.reason||"?")+")");return;}
+    INQ.forEach(function(v){if(v.id===id)v.status=status;});
+    renderInq();toast("Marked "+status);
+  }).catch(function(){toast("Network error");});
+};
+/* inbox overlay gets its own history entry so iOS back-swipe (or the X,
+   which just calls history.back()) returns to the console — same pattern
+   as the Dashboard tab */
+window.openInbox=function(){
+  document.getElementById("inqOverlay").classList.add("on");
+  history.pushState({inq:1},"","#inquiries");
+  window.scrollTo(0,0);
+};
+window.closeInbox=function(){history.back();};
+
+/* ============================================================
    DASHBOARD
    ============================================================ */
 function wilsonLB(correct,n){
@@ -522,6 +639,7 @@ function wilsonLB(correct,n){
   return (p+z*z/(2*n)-z*Math.sqrt((p*(1-p)+z*z/(4*n))/n))/(1+z*z/n);
 }
 function loadDash(){
+  loadInq();
   // all-time totals; unique_users = distinct emails normalized in SQL (+tags stripped, gmail dots)
   sfetch("admin_totals?select=*").then(function(rows){
     var t=rows&&rows[0];if(!t)throw new Error("empty");
@@ -624,8 +742,14 @@ function tab(t){                       // user tapped a tab
   if(t==="d") render(t);
 }
 window.addEventListener("popstate",function(e){
+  var ov=document.getElementById("inqOverlay");
+  if(e.state&&e.state.inq){ov.classList.add("on");return;}  // forward-swipe back into the inbox
+  ov.classList.remove("on");
   render(e.state&&e.state.tab==="d"?"d":"q");
 });
+if(location.hash==="#inquiries"){ // refresh/deep-link on the inbox hash: land on the console
+  history.replaceState(null,"",location.pathname);
+}
 if(location.hash==="#dashboard"){      // deep link / refresh on dashboard
   history.replaceState(null,"",location.pathname);
   history.pushState({tab:"d"},"","#dashboard");
