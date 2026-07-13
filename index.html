@@ -760,24 +760,40 @@ function loadDash(){
    tab in Search mode with the city pre-queried (server search covers
    the whole queue), so Troy can decide its venues = more ground truth.
    ============================================================ */
-var GT_CITIES=[["austin","Austin, TX"],["beverly hills","Beverly Hills, CA"],["naples","Naples, FL"],["santa barbara","Santa Barbara, CA"],["scottsdale","Scottsdale, AZ"],["st petersburg","St. Petersburg, FL"],["venice","Venice, CA"]];
+var GT_CITIES=[
+  {c:"austin",s:"texas",label:"Austin, TX"},
+  {c:"beverly-hills",s:"california",label:"Beverly Hills, CA"},
+  {c:"naples",s:"florida",label:"Naples, FL"},
+  {c:"santa-barbara",s:"california",label:"Santa Barbara, CA"},
+  {c:"scottsdale",s:"arizona",label:"Scottsdale, AZ"},
+  {c:"st-petersburg",s:"florida",label:"St. Petersburg, FL"},
+  {c:"venice",s:"california",label:"Venice, CA"}];
 var GT_PENDING=null;
 function renderGT(){
-  document.getElementById("dGT").innerHTML=GT_CITIES.map(function(c){
-    return '<button class="stat" style="cursor:pointer;border-color:var(--color-border);font-family:inherit;text-align:left" onclick="gtReview(\''+c[0]+'\')">'+
-      '<div class="n" style="font-size:.95rem">'+esc(c[1])+'</div><div class="l">Review queue &rarr;</div></button>';
+  document.getElementById("dGT").innerHTML=GT_CITIES.map(function(c,i){
+    return '<button class="stat" style="cursor:pointer;border-color:var(--color-border);font-family:inherit;text-align:left" onclick="gtReview('+i+')">'+
+      '<div class="n" style="font-size:.95rem">'+esc(c.label)+'</div><div class="l">Review queue &rarr;</div></button>';
   }).join("");
 }
-window.gtReview=function(q){
-  GT_PENDING=q;
+window.gtReview=function(i){
+  GT_PENDING=GT_CITIES[i];
   if(CUR_TAB!=="q")tab("q");else applyGT();
 };
 function applyGT(){
   if(GT_PENDING==null)return;
-  var q=GT_PENDING;GT_PENDING=null;
+  var g=GT_PENDING;GT_PENDING=null;
   setSort("search");
-  var sb=document.getElementById("searchbox");sb.value=q;
-  searchInput();
+  var sb=document.getElementById("searchbox");
+  var q=g.c.replace(/-/g," ");
+  sb.value=q;
+  /* STATE-SCOPED fetch (2026-07-13): the generic text search matches city_query
+     alone, so "beverly hills" surfaced Beverly Hills MICHIGAN. Ground-truth hops
+     query city AND state exactly; results land in SEARCHRES keyed to the
+     searchbox text so buildList uses them. Typing afterwards falls back to the
+     normal search path. */
+  sfetch("admin_review_queue?select=*&city_query=eq."+encodeURIComponent(g.c)+"&state_query=eq."+encodeURIComponent(g.s)+"&limit=500")
+    .then(function(rows){SEARCHQ=q;SEARCHRES=rows;if(SORT==="search")renderQueue();})
+    .catch(function(){});
 }
 
 /* ============================================================
