@@ -198,14 +198,18 @@
 
     <h2>Experiments &middot; A/B head-to-head</h2>
     <div id="dAB"><div class="empty">Loading&hellip;</div></div>
-    <h2>Calibration</h2>
+    <h2>Ground truth &middot; can the system run without you?</h2>
+    <div class="cards" id="gtStats"></div>
+    <div id="gtTable" style="margin:10px 0 4px"><div class="empty">Loading&hellip;</div></div>
+    <h2>Machine vs your verdicts</h2>
     <div id="dCal"><div class="empty">No decisions yet.</div></div>
+    <h2>Crowd vs your verdicts</h2>
+    <div id="gtCrowd"><div class="empty">Loading&hellip;</div></div>
+    <h2>Review next &middot; highest-learning cards</h2>
+    <div id="gtNext"><div class="empty">Loading&hellip;</div></div>
     <h2>Demand &middot; top cities, 30 days</h2>
     <div class="cards" id="dDemandTot"></div>
     <div id="dDemand"><div class="empty">Loading&hellip;</div></div>
-    <h2>Ground truth &middot; verified-city review</h2>
-    <div class="qmeta" style="margin:0 2px 10px">Carlsbad + Santa Monica are the calibration baseline. Tap another verified city to pull its queue items and add ground truth.</div>
-    <div class="cards" id="dGT"></div>
   </div>
 </main>
 
@@ -683,7 +687,7 @@ function wilsonLB(correct,n){
 }
 function loadDash(){
   loadInq();
-  renderGT();
+  loadGroundTruth();
   // all-time totals; unique_users = distinct emails normalized in SQL (+tags stripped, gmail dots)
   sfetch("admin_totals?select=*").then(function(rows){
     var t=rows&&rows[0];if(!t)throw new Error("empty");
@@ -801,20 +805,71 @@ var GT_CITIES=[
   {c:"st-petersburg",s:"florida",label:"St. Petersburg, FL"},
   {c:"los-angeles",s:"california",label:"Venice \u2192 Los Angeles, CA"}];
 var GT_PENDING=null;
-function renderGT(){
-  document.getElementById("dGT").innerHTML=GT_CITIES.map(function(c,i){
-    return '<button class="stat" style="cursor:pointer;border-color:var(--color-border);font-family:inherit;text-align:left" onclick="gtReview('+i+')">'+
-      '<div class="n" style="font-size:.95rem">'+esc(c.label)+'</div><div class="l" id="gtc'+i+'">Review queue &rarr;</div></button>';
-  }).join("");
-  // awaiting-review counts per city (a clear queue should read as DONE, not broken)
-  GT_CITIES.forEach(function(c,i){
-    fetch(SUPA+"/rest/v1/admin_review_queue?select=venue_id&city_query=eq."+encodeURIComponent(c.c)+"&state_query=eq."+encodeURIComponent(c.s),
-      {headers:{apikey:KEY,Authorization:"Bearer "+KEY,Prefer:"count=exact",Range:"0-0"}})
-    .then(function(r){var cr=r.headers.get("content-range"),n=cr?parseInt(cr.split("/")[1],10):null;
-      var el=document.getElementById("gtc"+i);
-      if(el&&n!=null)el.innerHTML=n?(n+" awaiting &rarr;"):"Queue clear \u2713";})
-    .catch(function(){});
+/* Ground Truth panel v2 (2026-07-13, Troy-approved mockup): one section, four
+   MECE rows. A=coverage (jump links live in the table — old button grid gone),
+   B=machine vs verdicts (the Calibration meters, retitled), C=crowd vs verdicts
+   (fills as signals stamped with seed_vid arrive), D=review-next action list. */
+function loadGroundTruth(){
+  // A. coverage + agreement per ground-truth city
+  var ors=GT_CITIES.map(function(g){return "and(city_query.eq."+g.c+",state_query.eq."+g.s+")";}).join(",");
+  sfetch("admin_truth_percity?select=*&or=("+ors+")").then(function(rows){
+    var by={};rows.forEach(function(r){by[r.city_query+"|"+r.state_query]=r;});
+    var verdicts=0,full=0;
+    var body=GT_CITIES.map(function(g,i){
+      var r=by[g.c+"|"+g.s]||{venues_total:0,decided:0,agreed:0};
+      verdicts+=r.decided; if(r.venues_total&&r.decided>=r.venues_total)full++;
+      var left=r.venues_total-r.decided;
+      var agree=r.decided>=3?(Math.round(100*r.agreed/r.decided)+"%"):(r.decided?'<span style="color:var(--color-text-muted)">n small</span>':'<span style="color:var(--color-text-muted)">&mdash;</span>');
+      var act=left>0
+        ?'<a href="#" style="color:var(--color-accent);font-weight:700;text-decoration:none" onclick="gtReview('+i+');return false">'+left+' left &rarr;</a>'
+        :'<span style="color:var(--color-success);font-weight:700">Clear &#10003;</span>';
+      return '<tr><td>'+esc(g.label)+'</td><td>'+r.decided+' / '+r.venues_total+'</td><td><b>'+agree+'</b></td><td style="text-align:right">'+act+'</td></tr>';
+    }).join("");
+    document.getElementById("gtStats").innerHTML=
+      '<div class="stat"><div class="n">'+verdicts+'</div><div class="l">Verdicts logged</div></div>'+
+      '<div class="stat"><div class="n">'+full+' / '+GT_CITIES.length+'</div><div class="l">Cities fully reviewed</div></div>';
+    document.getElementById("gtTable").innerHTML='<table><thead><tr><th>City</th><th>Reviewed</th><th>Agreement</th><th></th></tr></thead><tbody>'+body+'</tbody></table>';
+  }).catch(function(){
+    document.getElementById("gtStats").innerHTML="";
+    document.getElementById("gtTable").innerHTML='<div class="empty">Coverage view unavailable &mdash; run seeding/schema-groundtruth.sql.</div>';
   });
+  // C. crowd vs truth
+  sfetch("admin_crowd_truth?select=*").then(function(rows){
+    var t=rows&&rows[0];
+    if(!t||(!t.confirms&&!t.corrections)){
+      document.getElementById("gtCrowd").innerHTML='<div class="empty">No gradeable crowd signals yet &mdash; new visitor signals carry the seed venue id and will grade here automatically. This readout is the evidence for the &ldquo;Looks right!&rdquo; button decision.</div>';return;
+    }
+    document.getElementById("gtCrowd").innerHTML='<div class="cards">'+
+      '<div class="stat"><div class="n">'+(t.confirms?Math.round(100*t.confirms_match/t.confirms)+"%":"&mdash;")+'</div><div class="l">Confirms matching you ('+t.confirms_match+'/'+t.confirms+')</div></div>'+
+      '<div class="stat"><div class="n">'+(t.corrections?Math.round(100*t.corrections_match/t.corrections)+"%":"&mdash;")+'</div><div class="l">Corrections matching you ('+t.corrections_match+'/'+t.corrections+')</div></div></div>';
+  }).catch(function(){
+    document.getElementById("gtCrowd").innerHTML='<div class="empty">Crowd view unavailable &mdash; run seeding/schema-groundtruth.sql.</div>';
+  });
+  // D. review next
+  renderGTNext();
+}
+function gtNextCard(v,reason){
+  var slug=cityKey(v);
+  return '<div class="qcard" style="padding:11px 14px;margin-bottom:8px">'+
+    '<div class="vname" style="font-size:.9rem">'+esc(v.venue_name)+' <span style="font-weight:400;color:var(--color-text-muted)">&middot; '+pretty(v.city_query)+', '+stateAbbr(slug)+'</span></div>'+
+    '<div class="vmeta">'+reason+'</div>'+
+    '<div class="links" style="margin-top:8px"><a href="#" onclick="gtOpen(\''+esc(v.city_query)+'\',\''+esc(v.state_query)+'\');return false">Review</a></div></div>';
+}
+window.gtOpen=function(c,s){
+  for(var i=0;i<GT_CITIES.length;i++){if(GT_CITIES[i].c===c&&GT_CITIES[i].s===s){gtReview(i);return;}}
+  GT_PENDING={c:c,s:s,label:pretty(c)+", "+(ST[s]||s).toUpperCase()};
+  if(CUR_TAB!=="q")tab("q");else applyGT();
+};
+function renderGTNext(){
+  var out=[];
+  BLINDPOOL.filter(function(v){return !DECIDED[v.venue_id];}).slice(0,2).forEach(function(v){
+    out.push(gtNextCard(v,"Blind-audit gap &middot; high-confidence stratum needs more audits to graduate"));
+  });
+  QUEUE.filter(function(v){return v.access==="needs-audit";})
+       .sort(function(a,b){return (b.court_count||0)-(a.court_count||0);}).slice(0,2).forEach(function(v){
+    out.push(gtNextCard(v,"Access tag <b>needs-audit</b> &middot; "+(v.court_count||"?")+" courts unconfirmed"));
+  });
+  document.getElementById("gtNext").innerHTML=out.length?out.join(""):'<div class="empty">Nothing flagged right now.</div>';
 }
 window.gtReview=function(i){
   GT_PENDING=GT_CITIES[i];
