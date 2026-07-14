@@ -787,20 +787,34 @@ window.pickCombo=function(c,s){
    tab in Search mode with the city pre-queried (server search covers
    the whole queue), so Troy can decide its venues = more ground truth.
    ============================================================ */
+/* baseline cities included too (Troy: "Carlsbad doesn't show up at all") —
+   they still have unreviewed queue items. Venice CA has NO seeded venues
+   (it's an LA neighborhood), so its button reviews the Los Angeles queue. */
 var GT_CITIES=[
+  {c:"carlsbad",s:"california",label:"Carlsbad, CA \u2605"},
+  {c:"santa-monica",s:"california",label:"Santa Monica, CA \u2605"},
   {c:"austin",s:"texas",label:"Austin, TX"},
   {c:"beverly-hills",s:"california",label:"Beverly Hills, CA"},
   {c:"naples",s:"florida",label:"Naples, FL"},
   {c:"santa-barbara",s:"california",label:"Santa Barbara, CA"},
   {c:"scottsdale",s:"arizona",label:"Scottsdale, AZ"},
   {c:"st-petersburg",s:"florida",label:"St. Petersburg, FL"},
-  {c:"venice",s:"california",label:"Venice, CA"}];
+  {c:"los-angeles",s:"california",label:"Venice \u2192 Los Angeles, CA"}];
 var GT_PENDING=null;
 function renderGT(){
   document.getElementById("dGT").innerHTML=GT_CITIES.map(function(c,i){
     return '<button class="stat" style="cursor:pointer;border-color:var(--color-border);font-family:inherit;text-align:left" onclick="gtReview('+i+')">'+
-      '<div class="n" style="font-size:.95rem">'+esc(c.label)+'</div><div class="l">Review queue &rarr;</div></button>';
+      '<div class="n" style="font-size:.95rem">'+esc(c.label)+'</div><div class="l" id="gtc'+i+'">Review queue &rarr;</div></button>';
   }).join("");
+  // awaiting-review counts per city (a clear queue should read as DONE, not broken)
+  GT_CITIES.forEach(function(c,i){
+    fetch(SUPA+"/rest/v1/admin_review_queue?select=venue_id&city_query=eq."+encodeURIComponent(c.c)+"&state_query=eq."+encodeURIComponent(c.s),
+      {headers:{apikey:KEY,Authorization:"Bearer "+KEY,Prefer:"count=exact",Range:"0-0"}})
+    .then(function(r){var cr=r.headers.get("content-range"),n=cr?parseInt(cr.split("/")[1],10):null;
+      var el=document.getElementById("gtc"+i);
+      if(el&&n!=null)el.innerHTML=n?(n+" awaiting &rarr;"):"Queue clear \u2713";})
+    .catch(function(){});
+  });
 }
 window.gtReview=function(i){
   GT_PENDING=GT_CITIES[i];
@@ -819,7 +833,13 @@ function applyGT(){
      searchbox text so buildList uses them. Typing afterwards falls back to the
      normal search path. */
   sfetch("admin_review_queue?select=*&city_query=eq."+encodeURIComponent(g.c)+"&state_query=eq."+encodeURIComponent(g.s)+"&limit=500")
-    .then(function(rows){SEARCHQ=q;SEARCHRES=rows;if(SORT==="search")renderQueue();})
+    .then(function(rows){
+      SEARCHQ=q;SEARCHRES=rows;
+      if(SORT!=="search")return;
+      renderQueue();
+      if(!rows.length)document.getElementById("qlist").innerHTML=
+        '<div class="empty">Nothing awaiting review for '+esc(g.label)+' \u2014 decided and verified venues leave the queue.</div>';
+    })
     .catch(function(){});
 }
 
