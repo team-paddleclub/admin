@@ -694,7 +694,9 @@ function loadDash(){
     document.getElementById("dTotals").innerHTML=
       '<div class="stat"><div class="n">'+(t.report_requests||0)+'</div><div class="l">Report requests</div></div>'+
       '<div class="stat"><div class="n">'+(t.unique_users||0)+'</div><div class="l">Unique users</div></div>'+
-      '<div class="stat"><div class="n">'+(t.cities_requested||0)+'</div><div class="l">Cities requested</div></div>';
+      '<div class="stat"><div class="n">'+(t.cities_requested||0)+'</div><div class="l">Cities requested</div></div>'+
+      '<div class="stat"><div class="n">'+(t.funnel_events_total!=null?Number(t.funnel_events_total).toLocaleString():'&mdash;')+'</div><div class="l">Funnel events &middot; all time</div></div>'+
+      '<div class="stat"><div class="n">'+(t.funnel_visitors_total!=null?Number(t.funnel_visitors_total).toLocaleString():'&mdash;')+'</div><div class="l">Visitors &middot; all time</div></div>';
     // demand event totals live in the same view (30d window matches the table below)
     document.getElementById("dDemandTot").innerHTML=
       '<div class="stat"><div class="n">'+(t.funnel_events_30d||0)+'</div><div class="l">Events · 30d</div></div>'+
